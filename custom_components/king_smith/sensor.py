@@ -14,12 +14,13 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfSpeed, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import WalkingPadIntegrationData
-from .const import DOMAIN, BeltState, WalkingPadMode, WalkingPadStatus
+from .const import DOMAIN, BeltState, ProtocolType, WalkingPadMode, WalkingPadStatus
 from .coordinator import WalkingPadCoordinator
 
 
@@ -30,7 +31,8 @@ class WalkingPadSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[WalkingPadStatus], StateType]
 
 
-SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
+# Sensors available for all protocol types.
+COMMON_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
     WalkingPadSensorEntityDescription(
         device_class=SensorDeviceClass.DISTANCE,
         icon="mdi:walk",
@@ -41,16 +43,6 @@ SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         suggested_display_precision=2,
         translation_key="walkingpad_distance",
         value_fn=lambda status: status.get("session_distance", 0.0) / 1000,
-    ),
-    WalkingPadSensorEntityDescription(
-        icon="mdi:shoe-print",
-        key="walkingpad_steps",
-        name=None,
-        native_unit_of_measurement="steps",
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        suggested_display_precision=0,
-        translation_key="walkingpad_steps",
-        value_fn=lambda status: status.get("session_steps", 0),
     ),
     WalkingPadSensorEntityDescription(
         icon="mdi:timer",
@@ -113,6 +105,30 @@ SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         translation_key="walkingpad_mode",
         value_fn=lambda status: status.get("mode", WalkingPadMode.MANUAL).name.lower(),
     ),
+    WalkingPadSensorEntityDescription(
+        icon="mdi:shoe-print",
+        key="walkingpad_steps",
+        name=None,
+        native_unit_of_measurement="steps",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=0,
+        translation_key="walkingpad_steps",
+        value_fn=lambda status: status.get("session_steps", 0),
+    ),
+)
+
+# Sensors only available for FTMS devices (calories reported via FTMS Expended Energy).
+FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
+    WalkingPadSensorEntityDescription(
+        icon="mdi:fire",
+        key="walkingpad_calories",
+        name=None,
+        native_unit_of_measurement="kcal",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=0,
+        translation_key="walkingpad_calories",
+        value_fn=lambda status: status.get("session_calories", 0),
+    ),
 )
 
 
@@ -123,9 +139,17 @@ async def async_setup_entry(
 
     entry_data: WalkingPadIntegrationData = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
+    device = entry_data["device"]
+
+    # Build sensor list based on protocol type.
+    # Steps are in COMMON_SENSORS (available for both WiLink and FTMS).
+    sensors: list[WalkingPadSensorEntityDescription] = list(COMMON_SENSORS)
+
+    if device.protocol == ProtocolType.FTMS:
+        sensors.extend(FTMS_SENSORS)
 
     async_add_entities(
-        WalkingPadSensor(coordinator, description) for description in SENSORS
+        WalkingPadSensor(coordinator, description) for description in sensors
     )
 
 
@@ -150,6 +174,11 @@ class WalkingPadSensor(
         self.entity_description = entity_description
         self._attr_unique_id = (
             f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
+        )
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
+            name=coordinator.walkingpad_device.name,
+            manufacturer="KingSmith",
         )
 
     @property
