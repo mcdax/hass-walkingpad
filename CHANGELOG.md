@@ -8,6 +8,16 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-04
+
+### Fixed
+
+- speed control on KingSmith MC-21 (and other models exposing the
+  vendor pre-amble characteristic) — bumps `walkingpad-controller`
+  to 0.4.1, which writes the required pre-amble before each FTMS
+  Control Point command and tolerates `REQUEST_CONTROL` rejection.
+  See [walkingpad-controller#1](https://github.com/mcdax/walkingpad-controller/issues/1).
+
 ## [0.3.0] - 2025-11-15
 
 ### Added
