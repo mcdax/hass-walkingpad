@@ -90,6 +90,8 @@ class WalkingPad:
             "session_running_time": status.duration,
             "session_steps": status.steps,
             "session_calories": status.calories,
+            "training_status": status.training_status,
+            "last_fm_event": status.last_fm_event,
             "status_timestamp": status.timestamp,
         }
         self._fire_callbacks(ha_status)

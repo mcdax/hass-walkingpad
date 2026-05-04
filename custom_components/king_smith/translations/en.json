@@ -89,6 +89,12 @@
             },
             "walkingpad_mode": {
                 "name": "Mode"
+            },
+            "walkingpad_training_status": {
+                "name": "Training status"
+            },
+            "walkingpad_last_event": {
+                "name": "Last FTMS event"
             }
         },
         "switch": {

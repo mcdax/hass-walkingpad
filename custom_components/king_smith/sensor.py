@@ -12,7 +12,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfLength, UnitOfSpeed, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfLength, UnitOfSpeed, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -20,7 +20,15 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import WalkingPadIntegrationData
-from .const import DOMAIN, BeltState, ProtocolType, WalkingPadMode, WalkingPadStatus
+from .const import (
+    DOMAIN,
+    FTMS_FM_EVENT_NAMES,
+    FTMS_TRAINING_STATUS_NAMES,
+    BeltState,
+    ProtocolType,
+    WalkingPadMode,
+    WalkingPadStatus,
+)
 from .coordinator import WalkingPadCoordinator
 
 
@@ -98,7 +106,7 @@ COMMON_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
     ),
 )
 
-# Sensors only available for FTMS devices (calories reported via FTMS Expended Energy).
+# Sensors only available for FTMS devices.
 FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
     WalkingPadSensorEntityDescription(
         icon="mdi:fire",
@@ -109,6 +117,30 @@ FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         suggested_display_precision=0,
         translation_key="walkingpad_calories",
         value_fn=lambda status: status.get("session_calories", 0),
+    ),
+    WalkingPadSensorEntityDescription(
+        device_class=SensorDeviceClass.ENUM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:run",
+        key="walkingpad_training_status",
+        name=None,
+        options=list(FTMS_TRAINING_STATUS_NAMES.values()),
+        translation_key="walkingpad_training_status",
+        value_fn=lambda status: FTMS_TRAINING_STATUS_NAMES.get(
+            status.get("training_status", 0), "other"
+        ),
+    ),
+    WalkingPadSensorEntityDescription(
+        device_class=SensorDeviceClass.ENUM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:bell-ring",
+        key="walkingpad_last_event",
+        name=None,
+        options=list(FTMS_FM_EVENT_NAMES.values()),
+        translation_key="walkingpad_last_event",
+        value_fn=lambda status: FTMS_FM_EVENT_NAMES.get(
+            status.get("last_fm_event", 0), "none"
+        ),
     ),
 )
 

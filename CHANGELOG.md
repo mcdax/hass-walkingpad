@@ -8,6 +8,27 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-04
+
+### Added
+
+- Two new diagnostic sensors on FTMS devices, populated from the Training
+  Status (`0x2AD3`) and Fitness Machine Status (`0x2ADA`) notifications
+  the library subscribes to:
+  - **Training status** — Bluetooth SIG FTMS standard enum: `idle`,
+    `warming_up`, `low_intensity_interval`, `high_intensity_interval`,
+    `recovery_interval`, `cool_down`, `manual_mode`, `pre_workout`,
+    `post_workout`, etc.
+  - **Last FTMS event** — opcode of the most recent state-change event:
+    `started_or_resumed`, `stopped_or_paused`, `target_speed_changed`,
+    `target_inclination_changed`, etc.
+
+### Changed
+
+- Bumps `walkingpad-controller` to **0.4.4**, which extends
+  `TreadmillStatus` with `training_status` and `last_fm_event` fields
+  and fires the status callback whenever they change.
+
 ## [0.4.3] - 2026-05-04
 
 ### Added
