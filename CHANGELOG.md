@@ -8,6 +8,16 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-04
+
+### Fixed
+
+- pressing the belt **Stop** switch no longer drops the BLE connection
+  and silently flips the **Stay connected** toggle off when the user
+  has opted in to a persistent connection. The deferred-disconnect now
+  only fires when the belt switch had to flip `stay_connected` on for
+  the duration of the walk (i.e. it was off beforehand).
+
 ## [0.4.1] - 2026-05-04
 
 ### Fixed
