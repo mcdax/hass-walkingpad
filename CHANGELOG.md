@@ -8,6 +8,23 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-04
+
+### Added
+
+- device card now shows the **firmware version** (read from FTMS Software
+  Revision String 0x2A28) and the BLE-advertised model name. Powered by
+  the new properties in `walkingpad-controller` 0.4.3.
+
+### Changed
+
+- bumps `walkingpad-controller` to **0.4.3**, which (a) adds eager FTMS
+  detection for the MC-21 family (`KS-MC21-*`, `KS-SMC21C-*`,
+  `ZP-ZEALR1-*`), (b) staggers the FTMS CCCD subscriptions to match KS
+  Fit's connect timing, (c) acknowledges Control Point commands via
+  Fitness Machine Status events on the vendor pre-amble path, and
+  (d) subscribes to Training Status (`0x2AD3`).
+
 ## [0.4.2] - 2026-05-04
 
 ### Fixed

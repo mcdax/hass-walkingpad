@@ -67,6 +67,8 @@ class WalkingPadSpeedNumberEntity(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,
             manufacturer="KingSmith",
+            model=coordinator.walkingpad_device.name,
+            sw_version=coordinator.walkingpad_device.firmware_version or None,
         )
 
     @property

@@ -317,3 +317,8 @@ class WalkingPad:
     def speed_increment(self) -> float:
         """Speed step size in km/h."""
         return self._controller.speed_increment
+
+    @property
+    def firmware_version(self) -> str:
+        """Firmware version reported by the device (FTMS only; empty otherwise)."""
+        return self._controller.firmware_version
