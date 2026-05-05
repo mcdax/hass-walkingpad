@@ -93,13 +93,14 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
 
     @property
     def available(self) -> bool:
-        """The belt switch is unavailable while the BLE link is down.
+        """The belt switch stays available even while the BLE link is down.
 
-        Without a live link we can't drive the belt; an "on" toggle would
-        silently no-op. The user has the Stay-connected switch and the
-        speed slider (which auto-connects) for offline interactions.
+        Tapping it triggers the WalkingPad wrapper's connect-and-issue
+        sequence (same pattern as the speed slider), so the user can
+        start/stop the belt directly from the toggle without first
+        re-enabling Stay-connected. Mirrors the slider's #9 behavior.
         """
-        return self.coordinator.connected
+        return True
 
     @staticmethod
     def _create_entity_description(translation_key: str) -> SwitchEntityDescription:

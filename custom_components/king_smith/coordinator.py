@@ -73,8 +73,28 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
 
     @callback
     def _async_handle_disconnect(self) -> None:
-        """Trigger the callbacks for disconnected."""
+        """Trigger the callbacks for disconnected, and schedule reconnect
+        attempts when stay_connected is on.
+
+        KingSmith firmware sometimes drops the BLE link mid-command (e.g.
+        during START_OR_RESUME) AND then refuses new connections for tens
+        of seconds. A single reconnect attempt won't recover; we instead
+        schedule a series of attempts with backoff. The library bails
+        early on subsequent calls when CONNECTING/CONNECTED so this is
+        cheap when the first attempt does succeed.
+        """
         self.async_update_listeners()
+        if not self.walkingpad_device.stay_connected:
+            return
+        for delay in (3, 10, 30, 60):
+            async_call_later(
+                self.hass,
+                delay,
+                HassJob(
+                    self._async_connect,
+                    f"Reconnect after BLE drop (+{delay}s)",
+                ),
+            )
 
     async def _async_connect(self, *_) -> None:
         """Connect to the device."""
@@ -99,12 +119,19 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
 
     @callback
     def _unschedule_refresh(self) -> None:
-        """Unschedule any pending refresh since there is no longer any listeners."""
-        async_call_later(
-            self.hass,
-            0,
-            HassJob(self._async_disconnect, "Disonnect the WalkingPad"),
-        )
+        """Stop polling when no listeners remain.
+
+        Only disconnect the BLE link if Stay-connected is OFF — when it's
+        ON the user has explicitly opted in to a persistent connection
+        and we should keep it alive even while they're on a different
+        HA page (so coming back doesn't show a disconnected device).
+        """
+        if not self.walkingpad_device.stay_connected:
+            async_call_later(
+                self.hass,
+                0,
+                HassJob(self._async_disconnect, "Disconnect the WalkingPad"),
+            )
         return super()._unschedule_refresh()
 
     async def async_set_stay_connected(self, value: bool) -> None:
