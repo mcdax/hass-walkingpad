@@ -8,6 +8,22 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-05-05
+
+### Changed
+
+- The **Stay connected** toggle is now strictly user-controlled. Pressing
+  the **Belt** switch (in either Manual or Auto mode) no longer flips
+  Stay-connected on or off as a side effect; whatever value the user has
+  set is preserved across belt start/stop. Removes the deferred-disconnect
+  plumbing that was used to "borrow and return" the toggle for the
+  duration of a walk.
+
+  If you have Stay-connected **off** and you start the belt, the library
+  will connect just long enough to send the start command and disconnect
+  immediately afterwards — the belt keeps running, but live sensors stay
+  stale until you re-enable Stay-connected.
+
 ## [0.4.4] - 2026-05-04
 
 ### Added

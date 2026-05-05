@@ -93,13 +93,6 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
         self._temporary_belt_state = TemporaryValue[BeltState]()
         self._temporary_mode = TemporaryValue[WalkingPadMode]()
         self.coordinator = coordinator
-        # Tracks whether the user's stay_connected preference was True
-        # before async_turn_on forced it to True for the duration of the
-        # walk.  Only the explicit False case (user wants connect-per-
-        # command, the belt switch had to flip it on for the walk) gets
-        # an auto-disconnect on stop; True or None (HA restarted mid-walk,
-        # no observation) leaves the toggle alone.
-        self._stay_connected_was_true: bool | None = None
         self.entity_description = self._create_entity_description(
             "walkingpad_belt_switch"
         )
@@ -174,13 +167,16 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
+        """Turn the switch on.
+
+        Stay-connected is left as the user set it.  If they had it off,
+        the WalkingPad library will connect for the start command and
+        disconnect right after; the belt will keep running but live
+        sensors will go stale until the user manually re-enables
+        Stay-connected.
+        """
         self.set_temporary_mode(WalkingPadMode.MANUAL)
         self.set_temporary_belt_state(BeltState.STARTING)
-        self._stay_connected_was_true = (
-            self.coordinator.walkingpad_device.stay_connected
-        )
-        await self.coordinator.async_set_stay_connected(True)
         current_mode = self.coordinator.data.get("mode")
         if current_mode != WalkingPadMode.MANUAL:
             await self.coordinator.walkingpad_device.start_belt_in_mode(
@@ -190,15 +186,9 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
             await self.coordinator.walkingpad_device.start_belt()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
+        """Turn the switch off.  Stay-connected is left untouched."""
         self.set_temporary_belt_state(BeltState.STOPPED)
         await self.coordinator.walkingpad_device.stop_belt()
-        # Only auto-disconnect after stop if stay_connected wasn't the
-        # user's persistent preference — i.e. async_turn_on observed it
-        # as False and flipped it on for this walk.  When the observation
-        # is True or missing (HA restart mid-walk), leave the toggle alone.
-        if self._stay_connected_was_true is False:
-            self.coordinator.async_schedule_deferred_disconnect()
 
 
 class WalkingPadBeltSwitchAuto(WalkingPadBeltSwitchBase):
@@ -232,25 +222,18 @@ class WalkingPadBeltSwitchAuto(WalkingPadBeltSwitchBase):
         return belt_state in [BeltState.ACTIVE, BeltState.STARTING]
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
+        """Turn the switch on (auto mode).  Stay-connected is left untouched."""
         self.set_temporary_mode(WalkingPadMode.AUTO)
-        self._stay_connected_was_true = (
-            self.coordinator.walkingpad_device.stay_connected
-        )
-        await self.coordinator.async_set_stay_connected(True)
         await self.coordinator.walkingpad_device.switch_mode(WalkingPadMode.AUTO)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
+        """Turn the switch off (auto mode → standby).
+
+        Stay-connected is left untouched — fully under the user's control.
+        """
         self.set_temporary_mode(WalkingPadMode.STANDBY)
         self.set_temporary_belt_state(BeltState.STOPPED)
         await self.coordinator.walkingpad_device.switch_mode(WalkingPadMode.STANDBY)
-        # Only auto-disconnect after stop if stay_connected wasn't the
-        # user's persistent preference — i.e. async_turn_on observed it
-        # as False and flipped it on for this walk.  When the observation
-        # is True or missing (HA restart mid-walk), leave the toggle alone.
-        if self._stay_connected_was_true is False:
-            self.coordinator.async_schedule_deferred_disconnect()
 
 
 class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
@@ -312,8 +295,8 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
             _LOGGER.info("No previous stay_connected state, defaulting to ON")
             self.coordinator.walkingpad_device.stay_connected = True
 
-        # Subscribe to coordinator updates so our UI state refreshes when
-        # belt switches toggle stay_connected via the coordinator.
+        # Subscribe to coordinator updates so our UI state refreshes
+        # whenever the underlying stay_connected flag changes.
         self.async_on_remove(
             self.coordinator.async_add_listener(self._handle_coordinator_update)
         )
