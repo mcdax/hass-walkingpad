@@ -8,6 +8,19 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-05-05
+
+### Fixed
+
+- **Belt switch lagged behind state changes.** After dragging the
+  speed slider, "Zustand" updated promptly but the **Belt** toggle
+  stayed in the wrong position for tens of seconds before flipping.
+  Cause: the belt-switch entity wasn't subscribed to coordinator
+  updates and was relying on HA's default polling. It now subscribes
+  to coordinator notifications (the same mechanism the **Zustand**
+  and **Verbunden** entities already used) and re-evaluates `is_on`
+  immediately on every status update.
+
 ## [0.4.8] - 2026-05-05
 
 ### Fixed

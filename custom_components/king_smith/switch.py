@@ -77,6 +77,20 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
     _temporary_belt_state: TemporaryValue[BeltState]
     _temporary_mode: TemporaryValue[WalkingPadMode]
 
+    # We push state updates from the coordinator listener; HA polling would
+    # otherwise lag the belt-state by many seconds after a slider drag, so
+    # the toggle would stay in the wrong position until the next poll.
+    _attr_should_poll = False
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to coordinator updates so is_on re-evaluates promptly
+        whenever the underlying belt_state changes — matching how the
+        "Zustand" sensor refreshes."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self.async_write_ha_state)
+        )
+
     @property
     def available(self) -> bool:
         """The belt switch is unavailable while the BLE link is down.
