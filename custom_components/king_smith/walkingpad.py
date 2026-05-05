@@ -55,6 +55,7 @@ class WalkingPad:
         """Create a WalkingPad object."""
         self._controller = WalkingPadController(ble_device=ble_device, name=name)
         self._callbacks = []
+        self._disconnect_callbacks = []
         self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
         # BLE operation lock — serialises all BLE operations so coordinator
@@ -102,6 +103,8 @@ class WalkingPad:
             "session_running_time": status.duration,
             "session_steps": status.steps,
             "session_calories": status.calories,
+            "session_calories_per_hour": status.calories_per_hour,
+            "heart_rate": status.heart_rate,
             "training_status": status.training_status,
             "last_fm_event": status.last_fm_event,
             "status_timestamp": status.timestamp,
@@ -112,6 +115,7 @@ class WalkingPad:
         """Handle disconnect from the library controller."""
         _LOGGER.warning("Device disconnected, marking as not connected")
         self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+        self._fire_disconnect_callbacks()
 
     def _fire_callbacks(self, status: WalkingPadStatus) -> None:
         """Fire all registered status callbacks."""
@@ -121,9 +125,21 @@ class WalkingPad:
             except Exception:
                 _LOGGER.exception("Error in status callback")
 
+    def _fire_disconnect_callbacks(self) -> None:
+        """Fire all registered disconnect callbacks."""
+        for callback in self._disconnect_callbacks:
+            try:
+                callback()
+            except Exception:
+                _LOGGER.exception("Error in disconnect callback")
+
     def register_status_callback(self, callback) -> None:
         """Register a status callback."""
         self._callbacks.append(callback)
+
+    def register_disconnect_callback(self, callback) -> None:
+        """Register a callback fired when the BLE link drops."""
+        self._disconnect_callbacks.append(callback)
 
     # --- Properties ---
 

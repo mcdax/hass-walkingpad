@@ -84,6 +84,12 @@
             "walkingpad_calories": {
                 "name": "Calories"
             },
+            "walkingpad_calories_per_hour": {
+                "name": "Calorie rate"
+            },
+            "walkingpad_heart_rate": {
+                "name": "Heart rate"
+            },
             "walkingpad_state": {
                 "name": "State"
             },
@@ -95,6 +101,26 @@
             },
             "walkingpad_last_event": {
                 "name": "Last FTMS event"
+            },
+            "walkingpad_firmware_version": {
+                "name": "Firmware version"
+            },
+            "walkingpad_protocol": {
+                "name": "Protocol"
+            },
+            "walkingpad_min_speed": {
+                "name": "Min speed"
+            },
+            "walkingpad_max_speed": {
+                "name": "Max speed"
+            },
+            "walkingpad_speed_increment": {
+                "name": "Speed increment"
+            }
+        },
+        "binary_sensor": {
+            "walkingpad_connected": {
+                "name": "Connected"
             }
         },
         "switch": {

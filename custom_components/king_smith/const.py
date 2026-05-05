@@ -44,6 +44,8 @@ class WalkingPadStatus(TypedDict):
     session_distance: int  # distance in meters
     session_steps: int
     session_calories: int  # total energy in kcal (FTMS only)
+    session_calories_per_hour: int  # energy rate in kcal/h (FTMS only)
+    heart_rate: int  # bpm; 0 when no HR sensor is paired with the treadmill
     training_status: int  # FTMS Training Status (0x2AD3) code; 0 if unknown
     last_fm_event: int  # opcode of most recent FM Status (0x2ADA) event
     status_timestamp: float

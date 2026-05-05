@@ -15,7 +15,12 @@ from .const import CONF_MAC, CONF_NAME, DOMAIN
 from .coordinator import WalkingPadCoordinator
 from .walkingpad import WalkingPad
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.NUMBER,
+]
 
 
 class WalkingPadIntegrationData(TypedDict):

@@ -8,6 +8,42 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-05-05
+
+### Added
+
+- **Connected** binary sensor (`binary_sensor.walkingpad_connected`,
+  `device_class=connectivity`, diagnostic) showing whether HA currently
+  has an active BLE link to the treadmill.
+- **Calorie rate** sensor (kcal/h, FTMS only).
+- **Heart rate** sensor (bpm, FTMS only). Reports as unavailable when
+  no HR strap is paired with the treadmill — FTMS reports `0` in that
+  case, which would otherwise mislead.
+- **Protocol** sensor (enum: `ftms` / `wilink` / `unknown`, diagnostic).
+- **Min speed**, **Max speed**, **Speed increment** sensors (km/h,
+  diagnostic) — exposes the device-capability values that already drive
+  the speed slider, so they're available for use in templates and
+  automations.
+- **Firmware version** sensor (string, FTMS-only, diagnostic) —
+  populated from the FTMS Software Revision String. Also continues to
+  appear as `sw_version` on the device card.
+
+### Fixed
+
+- The library's BLE-disconnect callback was previously not propagated
+  to the coordinator, meaning entities (sensor `available`, switches
+  `is_on`, the new connected binary sensor) didn't react to mid-session
+  link drops promptly. The disconnect now flows through to all
+  registered listeners.
+
+### Changed
+
+- Internal: `WalkingPadSensorEntityDescription.value_fn` now receives
+  the coordinator instead of the bare status dict, so static device-
+  info sensors and dynamic status sensors share the same description
+  class. New `static=True` flag marks sensors whose value comes from
+  device capabilities and stays available even with BLE down.
+
 ## [0.4.6] - 2026-05-05
 
 ### Changed

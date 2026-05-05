@@ -35,6 +35,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         )
         self.walkingpad_device = walkingpad_device
         self.walkingpad_device.register_status_callback(self._async_handle_update)
+        self.walkingpad_device.register_disconnect_callback(self._async_handle_disconnect)
         self.data = {
             "belt_state": BeltState.STOPPED,
             "speed": 0.0,
