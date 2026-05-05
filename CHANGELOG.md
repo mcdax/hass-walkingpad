@@ -8,6 +8,33 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-05-05
+
+### Fixed
+
+- **Belt toggle now starts the belt directly from a disconnected state.**
+  Previously the toggle went unavailable when the BLE link was down,
+  forcing the user to first re-enable Stay-connected (or use the speed
+  slider) before they could start a walk. The toggle now stays
+  available; tapping it triggers the same connect-and-issue sequence
+  the slider already used.
+- **Auto-reconnect on BLE drops with backoff.** KingSmith firmware
+  occasionally drops the link mid-command (e.g. during a cold-start
+  `START_OR_RESUME`) and then refuses new connections for tens of
+  seconds. The previous single +1 s reconnect attempt was getting
+  overrun by the library's own internal retry and never fired again,
+  leaving the integration stuck for minutes until the next polling tick
+  recovered. The disconnect callback now schedules attempts at +3 s,
+  +10 s, +30 s, and +60 s, covering the firmware's full recovery
+  window.
+- **Stay-connected truly keeps the link alive.** When Stay-connected
+  was ON and the user navigated to a different HA page, the coordinator
+  was disconnecting the BLE link as soon as listeners dropped to zero
+  (the `_unschedule_refresh` handler unconditionally tore down the
+  link). Returning to the device page would then show stale "unavailable"
+  state until reconnect kicked in. The disconnect on listener-drop is
+  now skipped when Stay-connected is ON.
+
 ## [0.4.9] - 2026-05-05
 
 ### Fixed
