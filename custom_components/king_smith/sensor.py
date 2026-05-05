@@ -280,6 +280,11 @@ class WalkingPadSensor(
         self._attr_unique_id = (
             f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
         )
+        # Pin the entity_id to a stable English slug derived from the
+        # description key, so HA doesn't auto-generate it from the
+        # localized friendly_name (which led to inconsistent IDs like
+        # `sensor.walkingpad_kalorienrate` in the past).
+        self._attr_suggested_object_id = self.entity_description.key
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,

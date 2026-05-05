@@ -91,22 +91,73 @@
                 "name": "Herzfrequenz"
             },
             "walkingpad_state": {
-                "name": "Zustand"
+                "name": "Zustand",
+                "state": {
+                    "stopped": "Gestoppt",
+                    "active": "Aktiv",
+                    "standby": "Standby",
+                    "starting": "Startet",
+                    "unknown": "Unbekannt"
+                }
             },
             "walkingpad_mode": {
-                "name": "Modus"
+                "name": "Modus",
+                "state": {
+                    "auto": "Automatik",
+                    "manual": "Manuell",
+                    "standby": "Standby"
+                }
             },
             "walkingpad_training_status": {
-                "name": "Trainingsstatus"
+                "name": "Trainingsstatus",
+                "state": {
+                    "other": "Sonstiges",
+                    "idle": "Im Leerlauf",
+                    "warming_up": "Aufwärmen",
+                    "low_intensity_interval": "Intervall mit geringer Intensität",
+                    "high_intensity_interval": "Intervall mit hoher Intensität",
+                    "recovery_interval": "Erholungsintervall",
+                    "iso_metric": "Iso-metrisch",
+                    "heart_rate_control": "Herzfrequenz-Kontrolle",
+                    "fitness_test": "Fitness-Test",
+                    "speed_out_of_control": "Geschwindigkeit außer Kontrolle",
+                    "cool_down": "Cool-down",
+                    "watt_control": "Watt-Kontrolle",
+                    "manual_mode": "Manueller Modus",
+                    "pre_workout": "Vor dem Training",
+                    "post_workout": "Nach dem Training"
+                }
             },
             "walkingpad_last_event": {
-                "name": "Letztes FTMS-Ereignis"
+                "name": "Letztes FTMS-Ereignis",
+                "state": {
+                    "none": "Keines",
+                    "reset": "Reset",
+                    "stopped_or_paused": "Gestoppt oder pausiert",
+                    "stopped_by_safety_key": "Gestoppt durch Sicherheitsschlüssel",
+                    "started_or_resumed": "Gestartet oder fortgesetzt",
+                    "target_speed_changed": "Zielgeschwindigkeit geändert",
+                    "target_inclination_changed": "Zielneigung geändert",
+                    "target_resistance_changed": "Zielwiderstand geändert",
+                    "target_power_changed": "Zielleistung geändert",
+                    "target_heart_rate_changed": "Ziel-Herzfrequenz geändert",
+                    "target_expended_energy_changed": "Ziel-Energieverbrauch geändert",
+                    "target_time_changed": "Zielzeit geändert",
+                    "spin_down_status": "Spin-down-Status",
+                    "target_cadence_changed": "Ziel-Trittfrequenz geändert",
+                    "control_permission_lost": "Steuerungsberechtigung verloren"
+                }
             },
             "walkingpad_firmware_version": {
                 "name": "Firmware-Version"
             },
             "walkingpad_protocol": {
-                "name": "Protokoll"
+                "name": "Protokoll",
+                "state": {
+                    "ftms": "FTMS",
+                    "wilink": "WiLink (Legacy)",
+                    "unknown": "Unbekannt"
+                }
             },
             "walkingpad_min_speed": {
                 "name": "Min. Geschwindigkeit"
@@ -124,14 +175,8 @@
             }
         },
         "switch": {
-            "walkingpad_belt_switch": {
+            "walkingpad_belt": {
                 "name": "Laufband"
-            },
-            "walkingpad_belt_switch_manual": {
-                "name": "Laufband (manueller Modus)"
-            },
-            "walkingpad_belt_switch_auto": {
-                "name": "Laufband (Auto-Modus)"
             },
             "walkingpad_stay_connected": {
                 "name": "Verbunden bleiben"

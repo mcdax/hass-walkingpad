@@ -63,6 +63,7 @@ class WalkingPadSpeedNumberEntity(
         """Initialize the speed number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{NUMBER_KEY}"
+        self._attr_suggested_object_id = NUMBER_KEY
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,
@@ -87,23 +88,35 @@ class WalkingPadSpeedNumberEntity(
         return self.coordinator.walkingpad_device.speed_increment
 
     @property
-    def native_value(self) -> float:
-        """Return the current speed."""
+    def native_value(self) -> float | None:
+        """Return the current speed, or None when disconnected.
+
+        Returning None marks the displayed value as unknown but keeps
+        the entity available so the user can still send a target speed
+        — see `available` below.
+        """
+        if not self.coordinator.connected:
+            return None
         return self.coordinator.data.get("speed", 0.0)
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the speed.
 
-        For FTMS devices, setting a target speed also starts the belt,
-        so we allow speed changes even when the belt is stopped.
-        For legacy devices, speed can only be changed when the belt is active.
+        For FTMS devices, setting a target speed also starts the belt
+        (the library handles the cold-start sequence), so we accept
+        speed changes whether or not the belt is currently running and
+        whether or not we are currently connected — the underlying
+        WalkingPad wrapper will connect-and-issue as needed.
+
+        For legacy WiLink devices, the firmware only accepts speed
+        changes while the belt is moving, so we keep the existing
+        belt-state guard for them.
         """
         from .const import ProtocolType
 
         device = self.coordinator.walkingpad_device
         belt_state = self.coordinator.data.get("belt_state")
 
-        # Legacy devices require the belt to be running before changing speed
         if device.protocol == ProtocolType.WILINK and belt_state not in [
             BeltState.ACTIVE,
             BeltState.STARTING,
@@ -114,5 +127,12 @@ class WalkingPadSpeedNumberEntity(
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.connected
+        """The slider stays available even when the BLE link is down.
+
+        On FTMS devices `set_native_value` triggers a connect-and-set
+        sequence, so the user can drag the slider to start a walk
+        directly without first toggling Stay-connected on. On WiLink
+        devices the slider is hidden (entity removed) when remote
+        control isn't enabled, so this only ever matters for FTMS.
+        """
+        return True

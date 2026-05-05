@@ -8,6 +8,67 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-05-05
+
+### Fixed
+
+- **Speed slider now works while disconnected.** With Stay-connected
+  off and the belt stopped, dragging the slider previously did nothing
+  — HA gated the service call on the entity's "available" flag, which
+  was tied to the BLE link. The slider now stays available, the
+  underlying library connects-and-issues, and the belt starts at the
+  requested speed. (Bug #9 in the audit.)
+- **Belt switch entity_id is no longer mode-locked.** Earlier, the
+  manual-mode and auto-mode switch classes shared one `unique_id` but
+  used different `translation_key`s, so the entity_id froze to
+  whichever class was first registered. Both variants now use the
+  unified `walkingpad_belt` translation_key; existing installs are
+  migrated. (Bug #2.)
+- **Belt switch goes unavailable when disconnected.** Matches the
+  sensor behavior; previously the switch silently no-op'd if you
+  tapped it while the link was down. (Bug #11.)
+- **Stale 2ADA event on every reconnect.** Fixed in
+  walkingpad-controller 0.4.5 — KingSmith firmware replays its
+  current Fitness Machine Status when the CCCD is enabled, which
+  flipped `last_fm_event` to a misleading historical value within a
+  second of every connect. The first 2ADA event after subscribe is
+  now skipped. (Bug #5.)
+
+### Changed
+
+- **Canonical English entity_ids on every install.** New entities now
+  pin their entity_id to a stable English slug derived from the
+  unique_id key, rather than letting HA derive it from the localized
+  friendly_name. Existing installs are migrated on integration
+  reload — entities like `sensor.state`, `switch.stay_connected`,
+  `number.speed`, and `sensor.walkingpad_kalorienrate` are renamed to
+  `sensor.walkingpad_state`, `switch.walkingpad_stay_connected`,
+  `number.walkingpad_speed`, `sensor.walkingpad_calories_per_hour`,
+  and so on.
+
+  **Action required:** any automations, scripts, or dashboards
+  referencing the old entity_ids need to be updated. The migration
+  log will list each rename in the HA logs at integration reload, so
+  you can grep for "Migrating entity_id" to see exactly what changed.
+- **Enum sensor states are now translated.** `Mode`, `State`,
+  `Training status`, `Last FTMS event`, and `Protocol` sensors now
+  show user-readable values in the UI's locale (English/German)
+  instead of raw snake_case identifiers. (Bug #4 / #8.)
+- Bumps `walkingpad-controller` to **0.4.5**.
+
+### Known limitations
+
+- On KS-HD-Z1D (and likely other KS-HD-* models), the `Last FTMS
+  event` sensor only captures **start** and **stop** events. The
+  device's firmware does not emit `target_speed_changed` 2ADA events
+  when speed is changed via the Control Point — the new speed shows
+  up only via the live `Treadmill Data` notifications, which drive
+  `Current speed` directly. (Bug #6.)
+- Rapid switch toggles within roughly one second (e.g. tapping the
+  Belt switch off+on in quick succession) may lose the second
+  command. Wait for the device to reach the first state before
+  issuing the next. (Bug #10 — work in progress.)
+
 ## [0.4.7] - 2026-05-05
 
 ### Added

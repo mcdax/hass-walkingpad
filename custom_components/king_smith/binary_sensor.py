@@ -57,6 +57,7 @@ class WalkingPadConnectedBinarySensor(BinarySensorEntity):
         self._attr_unique_id = (
             f"{coordinator.walkingpad_device.mac}-{CONNECTED_KEY}"
         )
+        self._attr_suggested_object_id = CONNECTED_KEY
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,

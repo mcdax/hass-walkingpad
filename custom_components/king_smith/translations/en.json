@@ -91,22 +91,73 @@
                 "name": "Heart rate"
             },
             "walkingpad_state": {
-                "name": "State"
+                "name": "State",
+                "state": {
+                    "stopped": "Stopped",
+                    "active": "Active",
+                    "standby": "Standby",
+                    "starting": "Starting",
+                    "unknown": "Unknown"
+                }
             },
             "walkingpad_mode": {
-                "name": "Mode"
+                "name": "Mode",
+                "state": {
+                    "auto": "Auto",
+                    "manual": "Manual",
+                    "standby": "Standby"
+                }
             },
             "walkingpad_training_status": {
-                "name": "Training status"
+                "name": "Training status",
+                "state": {
+                    "other": "Other",
+                    "idle": "Idle",
+                    "warming_up": "Warming up",
+                    "low_intensity_interval": "Low-intensity interval",
+                    "high_intensity_interval": "High-intensity interval",
+                    "recovery_interval": "Recovery interval",
+                    "iso_metric": "Iso-metric",
+                    "heart_rate_control": "Heart-rate control",
+                    "fitness_test": "Fitness test",
+                    "speed_out_of_control": "Speed out of control",
+                    "cool_down": "Cool down",
+                    "watt_control": "Watt control",
+                    "manual_mode": "Manual mode",
+                    "pre_workout": "Pre-workout",
+                    "post_workout": "Post-workout"
+                }
             },
             "walkingpad_last_event": {
-                "name": "Last FTMS event"
+                "name": "Last FTMS event",
+                "state": {
+                    "none": "None",
+                    "reset": "Reset",
+                    "stopped_or_paused": "Stopped or paused",
+                    "stopped_by_safety_key": "Stopped by safety key",
+                    "started_or_resumed": "Started or resumed",
+                    "target_speed_changed": "Target speed changed",
+                    "target_inclination_changed": "Target inclination changed",
+                    "target_resistance_changed": "Target resistance changed",
+                    "target_power_changed": "Target power changed",
+                    "target_heart_rate_changed": "Target heart-rate changed",
+                    "target_expended_energy_changed": "Target energy changed",
+                    "target_time_changed": "Target time changed",
+                    "spin_down_status": "Spin-down status",
+                    "target_cadence_changed": "Target cadence changed",
+                    "control_permission_lost": "Control permission lost"
+                }
             },
             "walkingpad_firmware_version": {
                 "name": "Firmware version"
             },
             "walkingpad_protocol": {
-                "name": "Protocol"
+                "name": "Protocol",
+                "state": {
+                    "ftms": "FTMS",
+                    "wilink": "WiLink (legacy)",
+                    "unknown": "Unknown"
+                }
             },
             "walkingpad_min_speed": {
                 "name": "Min speed"
@@ -124,14 +175,8 @@
             }
         },
         "switch": {
-            "walkingpad_belt_switch": {
+            "walkingpad_belt": {
                 "name": "Belt"
-            },
-            "walkingpad_belt_switch_manual": {
-                "name": "Belt (manual mode)"
-            },
-            "walkingpad_belt_switch_auto": {
-                "name": "Belt (auto mode)"
             },
             "walkingpad_stay_connected": {
                 "name": "Stay connected"

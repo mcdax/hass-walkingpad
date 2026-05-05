@@ -77,6 +77,16 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
     _temporary_belt_state: TemporaryValue[BeltState]
     _temporary_mode: TemporaryValue[WalkingPadMode]
 
+    @property
+    def available(self) -> bool:
+        """The belt switch is unavailable while the BLE link is down.
+
+        Without a live link we can't drive the belt; an "on" toggle would
+        silently no-op. The user has the Stay-connected switch and the
+        speed slider (which auto-connects) for offline interactions.
+        """
+        return self.coordinator.connected
+
     @staticmethod
     def _create_entity_description(translation_key: str) -> SwitchEntityDescription:
         """Create an entity description with the given translation key."""
@@ -94,11 +104,12 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
         self._temporary_mode = TemporaryValue[WalkingPadMode]()
         self.coordinator = coordinator
         self.entity_description = self._create_entity_description(
-            "walkingpad_belt_switch"
+            "walkingpad_belt"
         )
         self._attr_unique_id = (
             f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
         )
+        self._attr_suggested_object_id = SWITCH_KEY
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,
@@ -162,8 +173,12 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
     def __init__(self, coordinator: WalkingPadCoordinator):
         """Initialize the belt switch."""
         super().__init__(coordinator)
+        # Use the unified "Belt" translation_key. The mode (manual vs auto)
+        # is internal config — surfacing it in the entity name has caused
+        # confusion when the entity_id, friendly_name, and translation_key
+        # diverge after a mode change.
         self.entity_description = self._create_entity_description(
-            "walkingpad_belt_switch_manual"
+            "walkingpad_belt"
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -198,7 +213,7 @@ class WalkingPadBeltSwitchAuto(WalkingPadBeltSwitchBase):
         """Initialize the belt switch."""
         super().__init__(coordinator)
         self.entity_description = self._create_entity_description(
-            "walkingpad_belt_switch_auto"
+            "walkingpad_belt"
         )
 
     @property
@@ -265,6 +280,7 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
         self._attr_unique_id = (
             f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
         )
+        self._attr_suggested_object_id = STAY_CONNECTED_KEY
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
             name=coordinator.walkingpad_device.name,
