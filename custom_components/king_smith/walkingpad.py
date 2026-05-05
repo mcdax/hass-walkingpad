@@ -28,6 +28,12 @@ from .const import WalkingPadMode, WalkingPadStatus
 
 _LOGGER = logging.getLogger(__name__)
 
+# When stay_connected is OFF, disconnect this many seconds after the most
+# recent action. Bursts of actions (e.g. start_belt immediately followed by
+# set_speed) reset the timer so the BLE link is held for the whole burst,
+# avoiding connect/disconnect churn between them.
+IDLE_DISCONNECT_TIMEOUT_SECONDS = 5.0
+
 
 @unique
 class WalkingPadConnectionStatus(Enum):
@@ -58,9 +64,15 @@ class WalkingPad:
 
         # Stay Connected toggle: when True (default), HA maintains a
         # persistent BLE connection and the coordinator polls every 5s.
-        # When False, HA disconnects immediately after each command, freeing
+        # When False, HA disconnects 5s after the last action, freeing
         # the BLE link so the user's smartphone app can connect.
         self._stay_connected: bool = True
+
+        # Idle-disconnect timer task — schedules a `disconnect()` call
+        # IDLE_DISCONNECT_TIMEOUT_SECONDS after the most recent command,
+        # when stay_connected is False. Each new command cancels the
+        # current timer and (post-command) schedules a fresh one.
+        self._disconnect_timer_task: asyncio.Task[None] | None = None
 
         # Register library callbacks
         self._controller.register_status_callback(self._on_library_status_update)
@@ -154,18 +166,75 @@ class WalkingPad:
     def stay_connected(self, value: bool) -> None:
         """Set the stay_connected preference."""
         self._stay_connected = value
+        # Either direction invalidates a pending idle-disconnect:
+        #   True  → user wants to stay connected, don't drop the link
+        #   False → coordinator's set_stay_connected(False) disconnects
+        #           directly, no need for the deferred timer
+        self._cancel_idle_disconnect()
         _LOGGER.info("Stay connected set to %s", value)
 
     async def disconnect_after_command(self) -> None:
-        """Disconnect immediately if stay_connected is disabled."""
-        if not self._stay_connected:
-            _LOGGER.debug("Stay connected disabled, disconnecting after command")
+        """Schedule a deferred disconnect when stay_connected is OFF.
+
+        Bursts of actions reset the timer, so a sequence like
+        `start_belt -> set_speed` doesn't disconnect-and-reconnect
+        between the two commands. After the timer fires (5s after
+        the last action), we disconnect — unless stay_connected has
+        been turned back on or another action arrived first.
+        """
+        if self._stay_connected:
+            return
+        if not self.connected:
+            return
+        _LOGGER.debug(
+            "Stay connected disabled, scheduling disconnect in %ss",
+            IDLE_DISCONNECT_TIMEOUT_SECONDS,
+        )
+        self._reschedule_idle_disconnect()
+
+    def _reschedule_idle_disconnect(self) -> None:
+        """Cancel any pending idle-disconnect and start a fresh timer."""
+        self._cancel_idle_disconnect()
+        self._disconnect_timer_task = asyncio.create_task(
+            self._idle_disconnect_after_timeout(),
+            name="walkingpad-idle-disconnect",
+        )
+
+    def _cancel_idle_disconnect(self) -> None:
+        """Cancel the idle-disconnect timer if it's pending."""
+        task = self._disconnect_timer_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._disconnect_timer_task = None
+
+    async def _idle_disconnect_after_timeout(self) -> None:
+        """Wait for the idle timeout, then disconnect under the BLE lock."""
+        try:
+            await asyncio.sleep(IDLE_DISCONNECT_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            return
+        # Re-check under the BLE lock so we don't race with a command
+        # that started during the sleep.
+        async with self._ble_lock:
+            if self._stay_connected:
+                _LOGGER.debug("Idle timer fired but stay_connected is on; skipping")
+                return
+            if not self.connected:
+                return
+            _LOGGER.info(
+                "Idle timeout reached after %ss, disconnecting",
+                IDLE_DISCONNECT_TIMEOUT_SECONDS,
+            )
             await self.disconnect()
 
     # --- Connection ---
 
     async def connect(self) -> None:
         """Connect to the device."""
+        # An incoming connection request invalidates any pending
+        # idle-disconnect — we're about to use the link.
+        self._cancel_idle_disconnect()
+
         if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
             _LOGGER.info("Already connecting to WalkingPad")
             return

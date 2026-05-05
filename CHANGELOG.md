@@ -8,6 +8,18 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-05-05
+
+### Changed
+
+- When **Stay connected** is OFF, the BLE link is now held for **5 seconds
+  after the last action** before being dropped, instead of disconnecting
+  immediately after every command. This prevents connect/disconnect churn
+  when issuing a burst of actions in quick succession (e.g. start belt
+  then set speed, or set speed multiple times). Each new action resets
+  the 5 s timer; the link is dropped once the timer expires with no new
+  activity.
+
 ## [0.4.5] - 2026-05-05
 
 ### Changed
