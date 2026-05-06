@@ -23,7 +23,6 @@ from . import WalkingPadIntegrationData
 from .const import (
     DOMAIN,
     FTMS_FM_EVENT_NAMES,
-    FTMS_TRAINING_STATUS_NAMES,
     BeltState,
     ProtocolType,
     WalkingPadMode,
@@ -199,18 +198,12 @@ FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         # rather than report a misleading "0 bpm".
         value_fn=lambda coord: coord.data.get("heart_rate", 0) or None,
     ),
-    WalkingPadSensorEntityDescription(
-        device_class=SensorDeviceClass.ENUM,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:run",
-        key="walkingpad_training_status",
-        name=None,
-        options=list(FTMS_TRAINING_STATUS_NAMES.values()),
-        translation_key="walkingpad_training_status",
-        value_fn=lambda coord: FTMS_TRAINING_STATUS_NAMES.get(
-            coord.data.get("training_status", 0), "other"
-        ),
-    ),
+    # Training Status sensor was removed — walkingpad-controller 0.4.6
+    # no longer subscribes to Training Status (0x2AD3) on connect to
+    # cut a CCCD write off the connect path on marginal-signal hardware
+    # (see https://github.com/mcdax/walkingpad-controller/releases/tag/v0.4.6).
+    # The field remains in the coord data structure (defaulted to 0)
+    # so a future opt-in re-subscribe doesn't need a coord-API change.
     WalkingPadSensorEntityDescription(
         device_class=SensorDeviceClass.ENUM,
         entity_category=EntityCategory.DIAGNOSTIC,

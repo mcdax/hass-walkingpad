@@ -8,6 +8,27 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-05-05
+
+### Fixed
+
+- Connection stability on marginal-signal hardware. Pulls in
+  `walkingpad-controller` 0.4.6, which removes the Training Status
+  CCCD subscription from the connect critical path. Measured impact
+  on KS-HD-Z1D at -83 dBm RSSI: 20-second idle survival rate went
+  from 0/5 to 4/5. See
+  [walkingpad-controller v0.4.6](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.4.6)
+  for the bisection that motivated the change.
+
+### Removed
+
+- The `walkingpad_training_status` sensor was removed because the
+  underlying Training Status (0x2AD3) subscription is no longer made
+  on connect (see above). Existing installations may see the entity
+  as "unavailable" — it can be deleted from the entity registry.
+  The field is still passed through coord data so a future opt-in
+  re-subscribe could revive the sensor without further coord changes.
+
 ## [0.4.10] - 2026-05-05
 
 ### Fixed
