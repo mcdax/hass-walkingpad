@@ -8,6 +8,16 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-05-10
+
+### Fixed
+
+- **Stop button now lives under Steuerelemente / Controls.** It was
+  previously categorised as a diagnostic/config entity, so it ended up
+  buried under Konfiguration on the device card. The Stop button is a
+  primary user-facing control and belongs alongside the belt switch
+  and speed slider.
+
 ## [0.4.14] - 2026-05-10
 
 ### Fixed
