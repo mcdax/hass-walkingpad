@@ -216,9 +216,21 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
             await self.coordinator.walkingpad_device.start_belt()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off.  Stay-connected is left untouched."""
+        """Turn the switch off — sends PAUSE, not STOP.
+
+        The phone app and the physical remote pause when the user presses
+        their stop button: the device decelerates to zero but the session
+        counters (time, distance, calories, steps) carry over so a
+        subsequent toggle-on resumes from where the user left off.
+
+        ``stop_belt()`` (the hard reset that zeros counters) is still
+        available on the WalkingPad wrapper if a custom action / service
+        wants it — it's intentionally not on the default toggle because
+        most users expect the toggle to behave like the app does.
+        Stay-connected is left untouched.
+        """
         self.set_temporary_belt_state(BeltState.STOPPED)
-        await self.coordinator.walkingpad_device.stop_belt()
+        await self.coordinator.walkingpad_device.pause_belt()
 
 
 class WalkingPadBeltSwitchAuto(WalkingPadBeltSwitchBase):

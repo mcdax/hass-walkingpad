@@ -8,6 +8,22 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-05-10
+
+### Changed
+
+- **Belt toggle now pauses instead of fully stopping.** Previously
+  toggling the belt switch off ended the session and zeroed the
+  counters; toggling on then started a fresh session. This didn't
+  match what the phone app and the physical remote do, where pressing
+  stop pauses the session and counters carry over to the next start.
+  The toggle now sends FTMS PAUSE (`STOP_OR_PAUSE` opcode `0x08` with
+  PAUSE param `0x02`), via the new `WalkingPadController.pause()`
+  exposed in `walkingpad-controller` 0.4.7. The hard-stop path
+  (`stop_belt()`) is still available on the WalkingPad wrapper for
+  explicit session resets.
+  Refs [walkingpad-controller#2](https://github.com/mcdax/walkingpad-controller/issues/2).
+
 ## [0.4.11] - 2026-05-05
 
 ### Fixed

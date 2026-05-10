@@ -17,12 +17,20 @@ from enum import Enum, unique
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
+import walkingpad_controller.controller as _wpc_controller
 from walkingpad_controller import (
     BeltState,
     OperatingMode,
     TreadmillStatus,
     WalkingPadController,
 )
+
+# The library does its own 5-attempt internal retry on connect() with 3 s
+# between attempts (~16 s wasted on a single "no-slot" cycle). Our coordinator
+# already runs a reconnect loop with backoff, so the library's retry layer
+# just slows down the time-to-first-success when the BLE stack briefly has no
+# slot. One internal attempt is enough; our loop handles retries.
+_wpc_controller.MAX_CONNECT_RETRIES = 1
 
 from .const import WalkingPadMode, WalkingPadStatus
 
@@ -251,8 +259,10 @@ class WalkingPad:
         # idle-disconnect — we're about to use the link.
         self._cancel_idle_disconnect()
 
+        if self._connection_status == WalkingPadConnectionStatus.CONNECTED:
+            return
         if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
-            _LOGGER.info("Already connecting to WalkingPad")
+            _LOGGER.debug("Already connecting to WalkingPad")
             return
 
         self._connection_status = WalkingPadConnectionStatus.CONNECTING
@@ -270,6 +280,12 @@ class WalkingPad:
         except Exception:
             _LOGGER.exception("Unable to connect to WalkingPad")
             self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+        finally:
+            # If we exit through CancelledError (BaseException, not Exception)
+            # the except clauses don't run and status would stick in CONNECTING
+            # forever, jamming all subsequent reconnects.
+            if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
     async def disconnect(self) -> None:
         """Disconnect the device."""
@@ -285,11 +301,13 @@ class WalkingPad:
     # --- Commands ---
 
     async def update_state(self) -> None:
-        """Update device state by requesting current status."""
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
+        """Update device state by requesting current status.
 
+        Polling does not initiate connects — the coordinator's reconnect
+        loop is the sole source of (re)connection attempts, so polling
+        and the loop don't race and create back-to-back library cycles.
+        """
+        async with self._ble_lock:
             if not self.connected:
                 return
 
@@ -324,7 +342,12 @@ class WalkingPad:
             await self.disconnect_after_command()
 
     async def stop_belt(self) -> None:
-        """Stop the belt."""
+        """Stop the belt — full session end. Resets counters.
+
+        Most UI flows should call ``pause_belt()`` instead; that matches
+        the phone-app behaviour where the user's stop button preserves
+        time/distance/steps across the pause/resume cycle.
+        """
         async with self._ble_lock:
             if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
                 await self.connect()
@@ -333,6 +356,28 @@ class WalkingPad:
 
             try:
                 await self._controller.stop()
+            except BleakError as err:
+                _LOGGER.warning("Bluetooth error: %s", err)
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+            finally:
+                await self.disconnect_after_command()
+
+    async def pause_belt(self) -> None:
+        """Pause the belt — session stays live, counters preserved.
+
+        Sends FTMS ``STOP_OR_PAUSE`` with the PAUSE param, matching what
+        KS Fit and the physical remote do when the user presses stop.
+        A subsequent ``start_belt()`` resumes the session and continues
+        accumulating time/distance/steps from where it left off.
+        """
+        async with self._ble_lock:
+            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
+                await self.connect()
+            if not self.connected:
+                return
+
+            try:
+                await self._controller.pause()
             except BleakError as err:
                 _LOGGER.warning("Bluetooth error: %s", err)
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
