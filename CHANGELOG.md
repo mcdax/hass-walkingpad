@@ -8,6 +8,42 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-05-10
+
+### Fixed
+
+- **Reconnect task and BLE callbacks no longer leak across integration
+  reloads.** `async_unload_entry` now calls
+  `coordinator.async_shutdown()` before clearing `hass.data` — without
+  this, each reload added another listener and the duplicate-event
+  firing we eliminated in 0.4.10 came back.
+- **Reconnect-task drain on disconnect.** Cancelling the reconnect
+  loop and immediately running the disconnect raced against the
+  in-flight `walkingpad.connect()`, both touching
+  `_connection_status`. The cancel now also awaits the loop so the
+  state is settled before disconnect runs.
+- **Firmware version now appears on the device card.** Entities
+  snapshot `firmware_version` into their `DeviceInfo` at construction
+  time, but the library only reads it on connect, so the card stayed
+  empty. The coordinator now pushes the value into the device
+  registry on the first status update where it's known.
+- **Defensive entity-id migration (issue #2).** A failed migration
+  (e.g. an orphan from a previous registration occupying the canonical
+  entity_id) no longer kills integration setup; it logs a warning and
+  the integration loads.
+- **Stop button** entity's coordinator-update handler is now
+  `@callback`-decorated, matching the other entities and silencing
+  HA's thread-safety warnings.
+- Drop deprecated `CONNECTION_CLASS` from the config flow.
+
+### Changed
+
+- Bumps `walkingpad-controller` to **0.4.10**, which brings:
+  - WiLink: surface unilateral disconnects to upper layers (legacy
+    devices' disconnect callback never fired before).
+  - `WalkingPadController.disconnect()` no longer skips teardown when
+    the cached `_connected` bit drifted from the live backend state.
+
 ## [0.4.13] - 2026-05-10
 
 ### Added
