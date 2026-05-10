@@ -89,7 +89,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        integration_data: WalkingPadIntegrationData | None = hass.data[DOMAIN].pop(
+            entry.entry_id, None
+        )
+        # Shut the coordinator down so its reconnect task and BLE
+        # disconnect callback don't leak across reloads — otherwise the
+        # next coordinator's events fire 2x, 3x, … per reload.
+        if integration_data is not None:
+            await integration_data["coordinator"].async_shutdown()
 
     return unload_ok
 
@@ -180,4 +187,15 @@ def _async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
             updates["translation_key"] = new_translation_key
 
         if updates:
-            entity_registry.async_update_entity(ent.entity_id, **updates)
+            try:
+                entity_registry.async_update_entity(ent.entity_id, **updates)
+            except ValueError as err:
+                # An orphan from a previous registration of the same device
+                # may already occupy the canonical entity_id. Skipping the
+                # rename here keeps the integration loadable; the orphan can
+                # be cleaned up manually from Settings → Entities.
+                _LOGGER.warning(
+                    "Skipping entity_id migration for %s: %s",
+                    ent.entity_id,
+                    err,
+                )

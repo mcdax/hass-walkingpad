@@ -10,7 +10,7 @@ from homeassistant.components.button import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -107,6 +107,7 @@ class WalkingPadStopSessionButton(ButtonEntity):
             self.coordinator.async_add_listener(self._handle_state_change)
         )
 
+    @callback
     def _handle_state_change(self) -> None:
         """Re-render — picks up changes to `coordinator.connected`."""
         self.async_write_ha_state()
