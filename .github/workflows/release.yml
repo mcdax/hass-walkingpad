@@ -4,6 +4,13 @@ on:
   release:
     types:
       - "published"
+      - "created"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.4.14)"
+        required: true
+        type: "string"
 
 permissions: {}
 
@@ -14,22 +21,41 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: "Resolve target tag"
+        id: "tag"
+        shell: "bash"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          # Strip leading "v" so manifest.json gets a clean semver string
+          # (HACS/HA expect "0.4.14", not "v0.4.14").
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: "Checkout the repository"
         uses: "actions/checkout@v4.2.2"
+        with:
+          ref: "${{ steps.tag.outputs.tag }}"
 
       - name: "Adjust version number"
         shell: "bash"
         run: |
-          yq -i -o json '.version="${{ github.event.release.tag_name }}"' \
+          yq -i -o json '.version="${{ steps.tag.outputs.version }}"' \
             "${{ github.workspace }}/custom_components/king_smith/manifest.json"
 
       - name: "ZIP the integration directory"
         shell: "bash"
         run: |
           cd "${{ github.workspace }}/custom_components/king_smith"
-          zip king_smith.zip -r ./
+          # Exclude any local Python build artefacts so the zip is reproducible
+          zip -r king_smith.zip ./ -x '*.pyc' '*__pycache__*'
 
       - name: "Upload the ZIP file to the release"
         uses: softprops/action-gh-release@v2.2.1
         with:
+          tag_name: "${{ steps.tag.outputs.tag }}"
           files: ${{ github.workspace }}/custom_components/king_smith/king_smith.zip
