@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from homeassistant.components.button import (
     ButtonEntity,
     ButtonEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -68,11 +65,13 @@ class WalkingPadStopSessionButton(ButtonEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
 
+    # No entity_category — the Stop button is a primary user-facing control,
+    # so it lives in "Steuerelemente" / Controls alongside the belt switch
+    # and speed slider, not buried under "Konfiguration" / Diagnostics.
     entity_description = ButtonEntityDescription(
         key=STOP_SESSION_KEY,
         icon="mdi:stop",
         translation_key=STOP_SESSION_KEY,
-        entity_category=EntityCategory.CONFIG,
     )
 
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
