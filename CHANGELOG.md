@@ -8,6 +8,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-05-10
+
+### Changed
+
+- Bumps `walkingpad-controller` to **0.4.11**, which switches the FTMS
+  connect path to `bleak_retry_connector.establish_connection()`.
+  Addresses the long-standing `BleakClient.connect() called without
+  bleak-retry-connector` warning and substantially improves connection
+  reliability on ESPHome BT-proxy setups (no more
+  `ESP_GATT_CONN_FAIL_ESTABLISH` floods on marginal RSSI).
+
 ## [0.4.15] - 2026-05-10
 
 ### Fixed
