@@ -21,6 +21,7 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.NUMBER,
+    Platform.BUTTON,
 ]
 
 
@@ -35,13 +36,16 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options and reload platforms."""
-    await hass.config_entries.async_unload_platforms(
-        entry, [Platform.SWITCH, Platform.NUMBER]
-    )
-    await hass.config_entries.async_forward_entry_setups(
-        entry, [Platform.SWITCH, Platform.NUMBER]
-    )
+    """Update options and reload platforms.
+
+    The platforms reloaded here are the ones whose entity set depends on
+    options (specifically `remote_control_enabled`). The button platform
+    is in this list so the Stop button appears / disappears alongside
+    the belt switch when the user toggles remote-control.
+    """
+    reloadable_platforms = [Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
+    await hass.config_entries.async_unload_platforms(entry, reloadable_platforms)
+    await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

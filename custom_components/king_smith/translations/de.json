@@ -95,6 +95,7 @@
                 "state": {
                     "stopped": "Gestoppt",
                     "active": "Aktiv",
+                    "paused": "Pausiert",
                     "standby": "Standby",
                     "starting": "Startet",
                     "unknown": "Unbekannt"
@@ -185,6 +186,11 @@
         "number": {
             "walkingpad_speed": {
                 "name": "Geschwindigkeit"
+            }
+        },
+        "button": {
+            "walkingpad_stop_session": {
+                "name": "Stopp"
             }
         }
     }

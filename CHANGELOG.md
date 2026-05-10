@@ -8,6 +8,23 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-05-10
+
+### Added
+
+- **`paused` state on the `walkingpad_state` sensor.** When the user
+  toggles the belt off (which now sends FTMS PAUSE — see 0.4.12), the
+  state sensor reports `paused` instead of `stopped`, so dashboards
+  and automations can distinguish "session paused, will resume" from
+  "session ended, counters reset on next start". Pulls in
+  [walkingpad-controller 0.4.8](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.4.8)
+  which adds `BeltState.PAUSED` and tracks it from FTMS Status events.
+- **Stop button entity** (`button.walkingpad_stop_session`) that sends
+  the hard-stop variant — full session end with counters reset. Useful
+  when you actually want to start over instead of resume. Available
+  only when the BLE link is up; gated by remote-control like the belt
+  switch. Refs [walkingpad-controller#2](https://github.com/mcdax/walkingpad-controller/issues/2).
+
 ## [0.4.12] - 2026-05-10
 
 ### Changed
