@@ -126,9 +126,10 @@ Newer KingSmith treadmills (BLE name matching `KS-HD-*`) use the standard Blueto
 
 **Verified devices:**
 
-Device | BLE Name | Protocol
+Brand | Device | BLE Name | Protocol
 -- | -- | --
-KS-Z1D | KS-HD-Z1D | FTMS
+KingSmith | KS-Z1D | KS-HD-Z1D | FTMS |
+Sperax | RM-01| SPERAX_RM-01_****** | FTMS
 
 If you have a KingSmith device that uses FTMS (or doesn't work with the legacy protocol), please [open an issue](https://github.com/mcdax/hass-walkingpad/issues) with your device model and BLE name.
 
