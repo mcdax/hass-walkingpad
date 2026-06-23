@@ -127,7 +127,7 @@ Newer KingSmith treadmills (BLE name matching `KS-HD-*`) use the standard Blueto
 **Verified devices:**
 
 Brand | Device | BLE Name | Protocol
--- | -- | --
+-- | -- | -- | --
 KingSmith | KS-Z1D | KS-HD-Z1D | FTMS |
 Sperax | RM-01| SPERAX_RM-01_****** | FTMS
 
