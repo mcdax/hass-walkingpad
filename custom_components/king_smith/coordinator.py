@@ -57,6 +57,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             "session_distance": 0,
             "session_steps": 0,
             "session_calories": 0,
+            "vibration_level": 0,
             "status_timestamp": 0,
         }
 

@@ -115,6 +115,7 @@ class WalkingPad:
             "heart_rate": status.heart_rate,
             "training_status": status.training_status,
             "last_fm_event": status.last_fm_event,
+            "vibration_level": getattr(status, "vibration_level", 0),
             "status_timestamp": status.timestamp,
         }
         self._fire_callbacks(ha_status)
@@ -394,6 +395,27 @@ class WalkingPad:
 
             try:
                 await self._controller.set_speed(speed)
+            except BleakError as err:
+                _LOGGER.warning("Bluetooth error: %s", err)
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+            finally:
+                await self.disconnect_after_command()
+
+    async def set_vibration(self, level: int) -> None:
+        """Set the vibration level (0 = off, 1-4).
+
+        Sperax / WLT6200 devices only. On the P3 Max the belt and the
+        vibration motor are mutually exclusive — turning vibration on stops
+        the belt.
+        """
+        async with self._ble_lock:
+            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
+                await self.connect()
+            if not self.connected:
+                return
+
+            try:
+                await self._controller.set_vibration(level)
             except BleakError as err:
                 _LOGGER.warning("Bluetooth error: %s", err)
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED

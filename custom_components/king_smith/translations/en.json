@@ -186,6 +186,9 @@
         "number": {
             "walkingpad_speed": {
                 "name": "Speed"
+            },
+            "walkingpad_vibration": {
+                "name": "Vibration"
             }
         },
         "button": {
