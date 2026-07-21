@@ -64,10 +64,10 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/mcdax/hass-walkingpad/issues",
   "requirements": [
-    "walkingpad-controller @ git+https://github.com/mcdax/walkingpad-controller.git@d9f647f",
+    "walkingpad-controller @ git+https://github.com/mcdax/walkingpad-controller.git@4aee4a3",
     "ph4-walkingpad==1.0.2"
   ],
   "ssdp": [],
-  "version": "0.4.17b2",
+  "version": "0.4.17b3",
   "zeroconf": []
 }

@@ -49,6 +49,7 @@ class WalkingPadStatus(TypedDict):
     training_status: int  # FTMS Training Status (0x2AD3) code; 0 if unknown
     last_fm_event: int  # opcode of most recent FM Status (0x2ADA) event
     vibration_level: int  # vibration intensity 0-4 (Sperax/WLT6200 only)
+    incline: int  # incline level 0-10 (Sperax/WLT6200 only)
     status_timestamp: float
 
 

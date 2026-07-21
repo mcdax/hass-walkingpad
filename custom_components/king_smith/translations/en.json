@@ -187,6 +187,9 @@
             "walkingpad_speed": {
                 "name": "Speed"
             },
+            "walkingpad_incline": {
+                "name": "Incline"
+            },
             "walkingpad_vibration": {
                 "name": "Vibration"
             }
