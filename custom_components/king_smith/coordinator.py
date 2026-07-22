@@ -68,6 +68,14 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if not self.walkingpad_device.stay_connected:
             return self.data
 
+        # Safety net for silently-dropped links: the reconnect loop is normally
+        # started by the BLE disconnect callback, but if a link dies without
+        # that callback firing (seen on flaky BT proxies), nothing would re-arm
+        # it. This periodic poll notices we're down and (idempotently) ensures
+        # the reconnect loop is running.
+        if not self.walkingpad_device.connected:
+            self._ensure_reconnect_running()
+
         async with asyncio.timeout(STATUS_UPDATE_TIMEOUT_SECONDS):
             await self.walkingpad_device.update_state()
             # We don't know the status yet, it will be transmitted to the _async_handle_update callback.
