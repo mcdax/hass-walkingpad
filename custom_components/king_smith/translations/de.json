@@ -72,6 +72,12 @@
             "walkingpad_current_speed": {
                 "name": "Aktuelle Geschwindigkeit"
             },
+            "walkingpad_current_incline": {
+                "name": "Aktuelle Neigung"
+            },
+            "walkingpad_current_vibration": {
+                "name": "Aktuelle Vibration"
+            },
             "walkingpad_distance": {
                 "name": "Distanz"
             },
@@ -157,6 +163,7 @@
                 "state": {
                     "ftms": "FTMS",
                     "wilink": "WiLink (Legacy)",
+                    "sperax": "Sperax",
                     "unknown": "Unbekannt"
                 }
             },
