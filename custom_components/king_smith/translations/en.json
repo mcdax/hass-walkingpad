@@ -204,6 +204,9 @@
         "button": {
             "walkingpad_stop_session": {
                 "name": "Stop"
+            },
+            "walkingpad_reconnect": {
+                "name": "Reconnect"
             }
         }
     }

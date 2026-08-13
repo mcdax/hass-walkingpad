@@ -8,6 +8,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Reconnect button.** A manual "Reconnect" button forces an immediate
+  BLE reconnect attempt instead of waiting out the reconnect loop's
+  backoff (which settles at 30 s between tries once the treadmill has
+  been off for a while). Pressing it cancels the in-flight backoff sleep,
+  connects right away, and — if that fails and Stay-connected is on —
+  re-arms the loop so it keeps retrying. Enabled only while disconnected;
+  greys out once connected. Lives under Konfiguration / Diagnostics next
+  to the Connected sensor. Resolves #4.
+
 ## [0.4.16] - 2026-05-10
 
 ### Changed

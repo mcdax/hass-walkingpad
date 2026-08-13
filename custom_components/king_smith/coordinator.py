@@ -216,6 +216,26 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         await super().async_shutdown()
         await self._async_disconnect()
 
+    async def async_reconnect_now(self) -> None:
+        """Force an immediate reconnect attempt (from the Reconnect button).
+
+        The reconnect loop already retries on its own, but after a few
+        failures it settles into a 30 s backoff sleep — so when the user
+        powers the treadmill back on, HA can take up to half a minute to
+        notice. This method short-circuits that wait: it cancels the
+        in-flight loop (which may be mid-sleep), connects right away, then
+        re-arms the loop if we're still down and stay_connected is on so a
+        failed press keeps retrying with backoff.
+
+        Works regardless of stay_connected — a manual press is an explicit
+        "connect now", the same affordance the KS Fit app exposes.
+        """
+        await self._cancel_reconnect_task()
+        await self.walkingpad_device.connect()
+        self.async_update_listeners()
+        if not self.walkingpad_device.connected:
+            self._ensure_reconnect_running()
+
     async def async_set_stay_connected(self, value: bool) -> None:
         """Handle the stay_connected toggle from the switch entity.
 
