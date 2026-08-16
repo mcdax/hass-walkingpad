@@ -121,7 +121,7 @@ COMMON_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         icon="mdi:bluetooth",
         key="walkingpad_protocol",
         name=None,
-        options=["ftms", "wilink", "unknown"],
+        options=["ftms", "wilink", "sperax", "unknown"],
         static=True,
         translation_key="walkingpad_protocol",
         value_fn=lambda coord: coord.walkingpad_device.protocol.value,
@@ -229,6 +229,30 @@ FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
     ),
 )
 
+# Sensors only available for Sperax (WLT6200) devices — read-only live
+# read-outs of the incline and vibration level, mirroring the "Current speed"
+# sensor that accompanies the speed control.
+SPERAX_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
+    WalkingPadSensorEntityDescription(
+        icon="mdi:slope-uphill",
+        key="walkingpad_current_incline",
+        name=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        translation_key="walkingpad_current_incline",
+        value_fn=lambda coord: coord.data.get("incline", 0),
+    ),
+    WalkingPadSensorEntityDescription(
+        icon="mdi:vibrate",
+        key="walkingpad_current_vibration",
+        name=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        translation_key="walkingpad_current_vibration",
+        value_fn=lambda coord: coord.data.get("vibration_level", 0),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -245,6 +269,8 @@ async def async_setup_entry(
 
     if device.protocol == ProtocolType.FTMS:
         sensors.extend(FTMS_SENSORS)
+    elif device.protocol == ProtocolType.SPERAX:
+        sensors.extend(SPERAX_SENSORS)
 
     async_add_entities(
         WalkingPadSensor(coordinator, description) for description in sensors

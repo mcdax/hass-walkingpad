@@ -1,6 +1,10 @@
 """Walkingpad number support."""
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberMode,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfSpeed
 from homeassistant.core import HomeAssistant
@@ -17,11 +21,14 @@ from .const import (
     DEFAULT_PREFERRED_MODE,
     DOMAIN,
     BeltState,
+    ProtocolType,
     WalkingPadMode,
 )
 from .coordinator import WalkingPadCoordinator
 
 NUMBER_KEY = "walkingpad_speed"
+VIBRATION_KEY = "walkingpad_vibration"
+INCLINE_KEY = "walkingpad_incline"
 
 
 async def async_setup_entry(
@@ -36,17 +43,23 @@ async def async_setup_entry(
     if not (remote_control_enabled and preferred_mode == manual_mode):
         entity_registry = er.async_get(hass)
         mac_address = entry.data.get(CONF_MAC)
-        unique_id = f"{mac_address}-{NUMBER_KEY}"
-
-        entity_id = entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
-        if entity_id:
-            entity_registry.async_remove(entity_id)
+        for key in (NUMBER_KEY, VIBRATION_KEY, INCLINE_KEY):
+            unique_id = f"{mac_address}-{key}"
+            entity_id = entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
+            if entity_id:
+                entity_registry.async_remove(entity_id)
         return
 
     entry_data: WalkingPadIntegrationData = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
 
-    async_add_entities([WalkingPadSpeedNumberEntity(coordinator)])
+    entities: list[NumberEntity] = [WalkingPadSpeedNumberEntity(coordinator)]
+    # Incline and vibration are Sperax P3 Max (WLT6200) features only.
+    if coordinator.walkingpad_device.protocol == ProtocolType.SPERAX:
+        entities.append(WalkingPadInclineNumberEntity(coordinator))
+        entities.append(WalkingPadVibrationNumberEntity(coordinator))
+
+    async_add_entities(entities)
 
 
 class WalkingPadSpeedNumberEntity(
@@ -55,6 +68,13 @@ class WalkingPadSpeedNumberEntity(
     """Represent the WalkingPad speed number."""
 
     _attr_mode = NumberMode.AUTO
+    # Native unit is km/h (what the belt speaks). The SPEED device class lets
+    # HA convert the displayed min/max/step/value to the user's preferred unit
+    # (e.g. mph on a US unit system, or a per-entity override) and convert the
+    # value they set back to km/h before it reaches the device — matching how
+    # the "Current speed" sensor already behaves. Note the conversion applies
+    # to the whole scale, so the 0.5 km/h step lands on non-round mph values.
+    _attr_device_class = NumberDeviceClass.SPEED
     _attr_native_unit_of_measurement = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_has_entity_name = True
     _attr_translation_key = "walkingpad_speed"
@@ -136,3 +156,87 @@ class WalkingPadSpeedNumberEntity(
         control isn't enabled, so this only ever matters for FTMS.
         """
         return True
+
+
+class WalkingPadVibrationNumberEntity(
+    CoordinatorEntity[WalkingPadCoordinator], NumberEntity
+):
+    """Vibration level control for Sperax P3 Max (WLT6200) devices.
+
+    Level 0 turns vibration off; 1-4 select the intensity. On the P3 Max the
+    belt and the vibration motor are mutually exclusive — selecting a level
+    stops the belt.
+    """
+
+    _attr_mode = NumberMode.SLIDER
+    _attr_native_min_value = 0
+    _attr_native_max_value = 4
+    _attr_native_step = 1
+    _attr_has_entity_name = True
+    _attr_translation_key = VIBRATION_KEY
+
+    def __init__(self, coordinator: WalkingPadCoordinator) -> None:
+        """Initialize the vibration number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{VIBRATION_KEY}"
+        self._attr_suggested_object_id = VIBRATION_KEY
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
+            name=coordinator.walkingpad_device.name,
+            manufacturer="Sperax",
+            model=coordinator.walkingpad_device.name,
+            sw_version=coordinator.walkingpad_device.firmware_version or None,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current vibration level, or None when disconnected."""
+        if not self.coordinator.connected:
+            return None
+        return self.coordinator.data.get("vibration_level", 0)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the vibration level (0 = off, 1-4)."""
+        await self.coordinator.walkingpad_device.set_vibration(int(value))
+
+
+class WalkingPadInclineNumberEntity(
+    CoordinatorEntity[WalkingPadCoordinator], NumberEntity
+):
+    """Incline level control for Sperax P3 Max (WLT6200) devices.
+
+    Range 0 (flat) to 10 (max). The device has no decline. Incline rides
+    inside the run command, so the library only applies it while the belt is
+    moving and otherwise caches it for the next start.
+    """
+
+    _attr_mode = NumberMode.SLIDER
+    _attr_native_min_value = 0
+    _attr_native_max_value = 10
+    _attr_native_step = 1
+    _attr_has_entity_name = True
+    _attr_translation_key = INCLINE_KEY
+
+    def __init__(self, coordinator: WalkingPadCoordinator) -> None:
+        """Initialize the incline number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{INCLINE_KEY}"
+        self._attr_suggested_object_id = INCLINE_KEY
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
+            name=coordinator.walkingpad_device.name,
+            manufacturer="Sperax",
+            model=coordinator.walkingpad_device.name,
+            sw_version=coordinator.walkingpad_device.firmware_version or None,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current incline level, or None when disconnected."""
+        if not self.coordinator.connected:
+            return None
+        return self.coordinator.data.get("incline", 0)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the incline level (0-10)."""
+        await self.coordinator.walkingpad_device.set_incline(int(value))

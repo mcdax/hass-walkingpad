@@ -8,6 +8,30 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-16
+
+### Added
+
+- **Sperax P3 Max (wi-linktech WLT6200) support.** Adds a second protocol
+  alongside FTMS/WiLink: connect, speed control (up to 12 km/h), start /
+  stop / pause, incline (0-10), and vibration control, plus decoding of the
+  device's status frames (speed, distance, duration, steps, incline,
+  vibration). Incline and vibration controls and read-only sensors appear
+  only on Sperax devices. Requires `walkingpad-controller` 0.5.0.
+- **Reconnect button.** A manual "Reconnect" button forces an immediate
+  BLE reconnect attempt instead of waiting out the reconnect loop's
+  backoff (which settles at 30 s between tries once the treadmill has
+  been off for a while). Pressing it cancels the in-flight backoff sleep,
+  connects right away, and — if that fails and Stay-connected is on —
+  re-arms the loop so it keeps retrying. Enabled only while disconnected;
+  greys out once connected. Lives under Konfiguration / Diagnostics next
+  to the Connected sensor. Resolves #4.
+- **Speed slider unit conversion.** The speed adjustment now carries the
+  SPEED device class, so Home Assistant displays it in the user's preferred
+  unit (e.g. mph) and converts the set value back to km/h before sending it
+  to the belt — matching the "Current speed" sensor. Note the whole scale is
+  converted, so the 0.5 km/h step lands on non-round mph values. Resolves #5.
+
 ## [0.4.16] - 2026-05-10
 
 ### Changed

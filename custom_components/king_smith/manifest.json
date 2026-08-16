@@ -46,6 +46,9 @@
     },
     {
       "local_name": "SPERAX_RM-01_*"
+    },
+    {
+      "local_name": "SPERAX_P3MAX*"
     }
   ],
   "codeowners": [
@@ -61,10 +64,10 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/mcdax/hass-walkingpad/issues",
   "requirements": [
-    "walkingpad-controller>=0.4.11",
+    "walkingpad-controller>=0.5.0",
     "ph4-walkingpad==1.0.2"
   ],
   "ssdp": [],
-  "version": "0.4.16",
+  "version": "0.5.0",
   "zeroconf": []
 }

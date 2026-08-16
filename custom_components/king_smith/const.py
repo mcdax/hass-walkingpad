@@ -48,6 +48,8 @@ class WalkingPadStatus(TypedDict):
     heart_rate: int  # bpm; 0 when no HR sensor is paired with the treadmill
     training_status: int  # FTMS Training Status (0x2AD3) code; 0 if unknown
     last_fm_event: int  # opcode of most recent FM Status (0x2ADA) event
+    vibration_level: int  # vibration intensity 0-4 (Sperax/WLT6200 only)
+    incline: int  # incline level 0-10 (Sperax/WLT6200 only)
     status_timestamp: float
 
 
