@@ -4,17 +4,19 @@
 [![GitHub Activity][commits-shield]][commits]
 [![License][license-shield]](LICENSE)
 
-Home Assistant custom integration for KingSmith WalkingPad treadmills. Supports both the standard **FTMS** (Fitness Machine Service) BLE protocol and the legacy **WiLink** protocol.
+Home Assistant custom integration for KingSmith WalkingPad treadmills. Supports the standard **FTMS** (Fitness Machine Service) BLE protocol, the legacy **WiLink** protocol, and the **Sperax** (wi-linktech WLT6200) protocol used by the Sperax P3 Max.
 
-> This is a fork of [madmatah/hass-walkingpad](https://github.com/madmatah/hass-walkingpad) that adds FTMS protocol support via the [walkingpad-controller](https://github.com/mcdax/walkingpad-controller) library.
+> This is a fork of [madmatah/hass-walkingpad](https://github.com/madmatah/hass-walkingpad) that adds FTMS and Sperax protocol support via the [walkingpad-controller](https://github.com/mcdax/walkingpad-controller) library.
 
 **This integration will set up the following platforms.**
 
 Platform | Description
 -- | --
-`sensor` | WalkingPad usage metrics (speed, distance, duration, steps, calories).
-`switch` | Belt control and stay-connected toggle (requires remote control to be enabled).
-`number` | Speed control in manual mode (requires remote control to be enabled).
+`sensor` | WalkingPad usage metrics (speed, distance, duration, steps, calories, and — on Sperax devices — incline and vibration level).
+`binary_sensor` | Connection status.
+`switch` | Stay-connected toggle (always available), plus belt control when remote control is enabled.
+`number` | Speed control in manual mode, plus incline and vibration on Sperax devices (require remote control to be enabled).
+`button` | Reconnect (always available), plus a Stop-session button when remote control is enabled.
 
 ## Installation
 
@@ -85,7 +87,7 @@ Once enabled, you need to select a preferred mode that determines how the remote
 
 When manual mode is selected:
 - A **switch entity** is created that directly controls the belt start/stop. Turning the switch on starts the belt, turning it off stops it.
-- A **number entity** is created for speed control, allowing you to set the belt speed between 0.5 and 6.0 km/h (in increments of 0.1 km/h). The speed can only be adjusted when the belt is active or starting.
+- A **number entity** is created for speed control. The available range and step are read from the device at connection time (for example up to 12 km/h on the Sperax P3 Max), and the slider follows your Home Assistant unit setting (so it can display mph and convert back to km/h for the belt). On FTMS and Sperax devices you can set a speed even while stopped or disconnected — the integration connects and starts the belt as needed. On legacy WiLink devices the speed can only be adjusted while the belt is active or starting.
 
 #### Auto mode
 
@@ -97,18 +99,27 @@ When auto mode is selected:
 
 ### 4. Stay Connected switch
 
-When remote control is enabled, a **Stay Connected** switch entity is also created. This controls whether the BLE connection to the treadmill is kept open:
+A **Stay Connected** switch entity is always created (independently of remote control). It controls whether the BLE connection to the treadmill is kept open:
 
 - **ON** (connected): The integration maintains a BLE connection for real-time sensor updates. Required for remote control commands.
 - **OFF** (disconnected): The BLE connection is released. Sensors show stale data. Other Bluetooth clients (e.g. KS Fit app) can connect.
 
-**Auto-toggle behavior:** The integration automatically turns Stay Connected ON when you start the belt from Home Assistant, and OFF when the belt fully stops (after a deferred disconnect that waits for the belt to decelerate).
+Stay Connected stays under your control — the integration does not flip it automatically when you start or stop the belt. With it off, belt and speed commands still work: the integration briefly connects to send the command, then releases the link again.
+
+### 5. Buttons
+
+- **Reconnect** (always available): forces an immediate BLE reconnect instead of waiting out the automatic retry backoff, which can take up to 30 seconds once the treadmill has been off for a while. It is only enabled while the device is disconnected and lives under Konfiguration / Diagnostics.
+- **Stop** (when remote control is enabled): ends the current session and resets the counters. Different from the belt switch, which pauses and keeps the counters.
+
+### 6. Incline and vibration (Sperax P3 Max)
+
+On Sperax devices, two extra **number entities** are created when remote control is enabled: incline (0–10) and vibration (0 = off, 1–4). Matching read-only sensors show the current incline and vibration level. On the P3 Max the belt and the vibration motor are mutually exclusive — turning vibration on stops the belt.
 
 <!---->
 
 ## Supported protocols
 
-This integration supports two BLE communication protocols:
+This integration supports three BLE communication protocols:
 
 ### WiLink (legacy)
 
@@ -124,12 +135,19 @@ Newer KingSmith treadmills (BLE name matching `KS-HD-*`) use the standard Blueto
 - Cold start requires the FTMS Start/Resume command before speed can be set
 - The integration handles BLE connection drops during cold start with automatic speed recovery on reconnect
 
+### Sperax (wi-linktech WLT6200)
+
+The Sperax P3 Max uses a vendor-specific protocol over BLE service `0xFFF0` rather than FTMS. It is detected from the BLE name `SPERAX_P3MAX`. In addition to the usual sensors, Sperax devices expose incline (0–10) and vibration (0–4) controls and sensors.
+
+Protocol detection is name-based first (with the prefixes above), and falls back to probing the device's BLE services when the name is not conclusive. That fallback is why a device such as the Sperax RM-01, whose name starts with `SPERAX_` but which speaks FTMS, is still handled as FTMS.
+
 **Verified devices:**
 
 Brand | Device | BLE Name | Protocol
 -- | -- | -- | --
 KingSmith | KS-Z1D | KS-HD-Z1D | FTMS |
 Sperax | RM-01| SPERAX_RM-01_****** | FTMS
+Sperax | P3 Max | SPERAX_P3MAX | Sperax
 
 If you have a KingSmith device that uses FTMS (or doesn't work with the legacy protocol), please [open an issue](https://github.com/mcdax/hass-walkingpad/issues) with your device model and BLE name.
 

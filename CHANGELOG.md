@@ -8,6 +8,22 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-16
+
+### Fixed
+
+- **Sperax name detection no longer misroutes FTMS pads.** Bumps
+  `walkingpad-controller` to 0.5.1, which limits the Sperax vendor-protocol
+  name match to the P3 Max (`SPERAX_P3MAX`) instead of any `SPERAX_` name.
+  Sperax-branded pads that speak FTMS (e.g. the RM-01) are handled as FTMS
+  again instead of being pushed onto the wrong protocol.
+
+### Changed
+
+- README updated for the v0.5.0 features (Sperax P3 Max support, Reconnect
+  button, incline/vibration controls, unit-aware speed slider) and corrected
+  where it was stale (Stay Connected is always created; no auto-toggle).
+
 ## [0.5.0] - 2026-08-16
 
 ### Added
