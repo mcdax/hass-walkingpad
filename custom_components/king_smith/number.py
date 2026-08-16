@@ -1,6 +1,10 @@
 """Walkingpad number support."""
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberMode,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfSpeed
 from homeassistant.core import HomeAssistant
@@ -64,6 +68,13 @@ class WalkingPadSpeedNumberEntity(
     """Represent the WalkingPad speed number."""
 
     _attr_mode = NumberMode.AUTO
+    # Native unit is km/h (what the belt speaks). The SPEED device class lets
+    # HA convert the displayed min/max/step/value to the user's preferred unit
+    # (e.g. mph on a US unit system, or a per-entity override) and convert the
+    # value they set back to km/h before it reaches the device — matching how
+    # the "Current speed" sensor already behaves. Note the conversion applies
+    # to the whole scale, so the 0.5 km/h step lands on non-round mph values.
+    _attr_device_class = NumberDeviceClass.SPEED
     _attr_native_unit_of_measurement = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_has_entity_name = True
     _attr_translation_key = "walkingpad_speed"

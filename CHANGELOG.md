@@ -18,6 +18,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   re-arms the loop so it keeps retrying. Enabled only while disconnected;
   greys out once connected. Lives under Konfiguration / Diagnostics next
   to the Connected sensor. Resolves #4.
+- **Speed slider unit conversion.** The speed adjustment now carries the
+  SPEED device class, so Home Assistant displays it in the user's preferred
+  unit (e.g. mph) and converts the set value back to km/h before sending it
+  to the belt — matching the "Current speed" sensor. Note the whole scale is
+  converted, so the 0.5 km/h step lands on non-round mph values. Resolves #5.
 
 ## [0.4.16] - 2026-05-10
 
