@@ -42,6 +42,9 @@
       "local_name": "KS-HD-*"
     },
     {
+      "local_name": "KS-AP-*"
+    },
+    {
       "local_name": "WalkingPad"
     },
     {
