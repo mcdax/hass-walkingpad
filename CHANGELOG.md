@@ -8,6 +8,22 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-21
+
+### Added
+
+- **KingSmith R3 discovery.** Pads advertising as `KS-AP-*` (e.g. the R3,
+  `KS-AP-RQ3`) are now discovered via Bluetooth and handled as FTMS. Thanks
+  @pookey (#6).
+
+### Changed
+
+- Bumps `walkingpad-controller` to 0.6.0. On the R3, "Stop Session" now
+  pauses the belt and waits for confirmed standstill before ending the
+  session, because the R3 rejects FTMS STOP while the belt moves. FTMS
+  commands are also serialised, so a speed change sent while the belt is
+  starting waits for the start to finish.
+
 ## [0.5.1] - 2026-08-16
 
 ### Fixed

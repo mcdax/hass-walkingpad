@@ -150,7 +150,7 @@ KingSmith | R3 (KS-R3Q) | KS-AP-RQ3 | FTMS ¹
 Sperax | RM-01| SPERAX_RM-01_****** | FTMS
 Sperax | P3 Max | SPERAX_P3MAX | Sperax
 
-¹ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; [walkingpad-controller#8](https://github.com/mcdax/walkingpad-controller/pull/8) makes `stop()` pause first.
+¹ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; since [walkingpad-controller 0.6.0](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.6.0), `stop()` pauses first.
 
 If you have a KingSmith device that uses FTMS (or doesn't work with the legacy protocol), please [open an issue](https://github.com/mcdax/hass-walkingpad/issues) with your device model and BLE name.
 
