@@ -139,10 +139,11 @@ class WalkingPadSpeedNumberEntity(
     def available(self) -> bool:
         """The slider stays available even when the BLE link is down.
 
-        `set_native_value` triggers a connect-and-set sequence, so the
-        user can drag the slider to start a walk directly without first
-        toggling Stay-connected on. This holds for every protocol; the
-        slider only exists with remote control in manual mode.
+        `set_native_value` connects as needed, so on FTMS and Sperax the
+        user can drag the slider to start a walk without first toggling
+        Stay-connected on. WiLink only accepts speed changes while the belt
+        moves (see `async_set_native_value`). The slider only exists with
+        remote control in manual mode.
         """
         return True
 

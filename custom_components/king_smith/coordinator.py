@@ -1,7 +1,6 @@
 """The Walking Pad Coordinator."""
 
 import asyncio
-import contextlib
 import itertools
 import logging
 from collections.abc import Callable
@@ -268,5 +267,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if task is None or task.done():
             return
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
+        try:  # noqa: SIM105 - keep exact except semantics (no exception groups)
             await task
+        except (asyncio.CancelledError, Exception):
+            pass

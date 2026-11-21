@@ -363,7 +363,7 @@ class WalkingPad:
 
     async def _start_belt_unlocked(self) -> None:
         """Start the belt (caller must hold _ble_lock)."""
-        await self._run_command_unlocked(self._controller.start)
+        await self._run_command_unlocked(lambda: self._controller.start())
 
     async def stop_belt(self) -> None:
         """Stop the belt — full session end. Resets counters.
@@ -372,7 +372,7 @@ class WalkingPad:
         the phone-app behaviour where the user's stop button preserves
         time/distance/steps across the pause/resume cycle.
         """
-        await self._run_command(self._controller.stop)
+        await self._run_command(lambda: self._controller.stop())
 
     async def pause_belt(self) -> None:
         """Pause the belt — session stays live, counters preserved.
@@ -382,7 +382,7 @@ class WalkingPad:
         A subsequent ``start_belt()`` resumes the session and continues
         accumulating time/distance/steps from where it left off.
         """
-        await self._run_command(self._controller.pause)
+        await self._run_command(lambda: self._controller.pause())
 
     async def set_speed(self, speed: float) -> None:
         """Set the belt speed in km/h."""

@@ -180,8 +180,7 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
         Stay-connected is left as the user set it. If they had it off,
         the WalkingPad wrapper connects for the start command and drops
         the link 5 s after the last command; the belt keeps running, but
-        the live sensors become unavailable until Stay-connected is
-        re-enabled.
+        the live sensors are unavailable while disconnected.
         """
         self.set_temporary_mode(WalkingPadMode.MANUAL)
         self.set_temporary_belt_state(BeltState.STARTING)
@@ -259,7 +258,7 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
     smartphone app (e.g. KS Fit) can connect for tracking. Commands (belt
     on/off, speed) still work — they connect, send the command, and drop the
     link 5 s after the last one. Live sensors are unavailable while
-    disconnected, until stay_connected is re-enabled.
+    disconnected.
 
     State is persisted across HA restarts via RestoreEntity.
     """
