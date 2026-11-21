@@ -55,7 +55,7 @@ jobs:
           zip -r king_smith.zip ./ -x '*.pyc' '*__pycache__*'
 
       - name: "Upload the ZIP file to the release"
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: "${{ steps.tag.outputs.tag }}"
           files: ${{ github.workspace }}/custom_components/king_smith/king_smith.zip
