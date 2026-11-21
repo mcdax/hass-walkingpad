@@ -8,7 +8,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1b1] - 2026-11-21 (beta)
+
 ### Changed
+
+- Requires `walkingpad-controller` 0.6.1b1 (beta): sturdier FTMS command
+  acknowledgements and reconnects, R3 stop handling also with nameless BT
+  proxy devices and telemetry resubscribe, `set_speed(0)` pauses instead
+  of starting, several Sperax and WiLink fixes.
 
 - Internal cleanup without behaviour changes: shared entity helpers
   (`entity.py`), one code path for all BLE commands, config-flow option
