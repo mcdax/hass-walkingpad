@@ -2,9 +2,9 @@ name: "Release"
 
 on:
   release:
+    # Only "published": with "created" as well, one release ran the job twice.
     types:
       - "published"
-      - "created"
   workflow_dispatch:
     inputs:
       tag:
