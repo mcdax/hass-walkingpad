@@ -1,7 +1,6 @@
 """Walkingpad switch support."""
 
 import logging
-from abc import ABC
 from typing import Any
 
 from homeassistant.components.switch import (
@@ -11,28 +10,43 @@ from homeassistant.components.switch import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import WalkingPadIntegrationData
 from .const import (
-    CONF_MAC,
     CONF_PREFERRED_MODE,
     CONF_REMOTE_CONTROL_ENABLED,
     DEFAULT_PREFERRED_MODE,
     DOMAIN,
+    PREFERRED_MODE_MANUAL,
     BeltState,
     WalkingPadMode,
 )
 from .coordinator import STATUS_UPDATE_INTERVAL, WalkingPadCoordinator
+from .entity import (
+    async_remove_stale_entities,
+    walkingpad_device_info,
+    walkingpad_unique_id,
+)
 from .utils import TemporaryValue
 
 _LOGGER = logging.getLogger(__name__)
 
-SWITCH_KEY = "walkingpad_belt_switch"
+BELT_SWITCH_KEY = "walkingpad_belt_switch"
 STAY_CONNECTED_KEY = "walkingpad_stay_connected"
+
+# Both belt switch variants (manual / auto) use the unified "Belt"
+# translation_key. The mode is internal config — surfacing it in the entity
+# name caused confusion when the entity_id, friendly_name and translation_key
+# diverged after a mode change.
+BELT_SWITCH_DESCRIPTION = SwitchEntityDescription(
+    device_class=SwitchDeviceClass.SWITCH,
+    icon="mdi:cog-play",
+    key=BELT_SWITCH_KEY,
+    translation_key="walkingpad_belt",
+    has_entity_name=True,
+)
 
 
 async def async_setup_entry(
@@ -50,26 +64,19 @@ async def async_setup_entry(
     # Belt control switches are gated by remote_control_enabled
     if entry.options.get(CONF_REMOTE_CONTROL_ENABLED, False):
         preferred_mode = entry.options.get(CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE)
-        manual_mode = WalkingPadMode.MANUAL.name.lower()
 
-        if preferred_mode == manual_mode:
+        if preferred_mode == PREFERRED_MODE_MANUAL:
             entities.append(WalkingPadBeltSwitchManual(coordinator))
         else:
             entities.append(WalkingPadBeltSwitchAuto(coordinator))
     else:
         # Clean up belt switch entity if remote_control was disabled
-        entity_registry = er.async_get(hass)
-        mac_address = entry.data.get(CONF_MAC)
-        unique_id = f"{mac_address}-{SWITCH_KEY}"
-
-        entity_id = entity_registry.async_get_entity_id("switch", DOMAIN, unique_id)
-        if entity_id:
-            entity_registry.async_remove(entity_id)
+        async_remove_stale_entities(hass, entry, "switch", (BELT_SWITCH_KEY,))
 
     async_add_entities(entities)
 
 
-class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
+class WalkingPadBeltSwitchBase(SwitchEntity):
     """Base class for WalkingPad belt switch entities."""
 
     entity_description: SwitchEntityDescription
@@ -83,9 +90,11 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
     _attr_should_poll = False
 
     async def async_added_to_hass(self) -> None:
-        """Subscribe to coordinator updates so is_on re-evaluates promptly
-        whenever the underlying belt_state changes — matching how the
-        "Zustand" sensor refreshes."""
+        """Subscribe to coordinator updates.
+
+        is_on then re-evaluates promptly whenever the underlying belt_state
+        changes, matching how the State sensor refreshes.
+        """
         await super().async_added_to_hass()
         self.async_on_remove(
             self.coordinator.async_add_listener(self.async_write_ha_state)
@@ -102,36 +111,17 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
         """
         return True
 
-    @staticmethod
-    def _create_entity_description(translation_key: str) -> SwitchEntityDescription:
-        """Create an entity description with the given translation key."""
-        return SwitchEntityDescription(
-            device_class=SwitchDeviceClass.SWITCH,
-            icon="mdi:cog-play",
-            key=SWITCH_KEY,
-            translation_key=translation_key,
-            has_entity_name=True,
-        )
-
-    def __init__(self, coordinator: WalkingPadCoordinator):
+    def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the belt switch."""
         self._temporary_belt_state = TemporaryValue[BeltState]()
         self._temporary_mode = TemporaryValue[WalkingPadMode]()
         self.coordinator = coordinator
-        self.entity_description = self._create_entity_description(
-            "walkingpad_belt"
+        self.entity_description = BELT_SWITCH_DESCRIPTION
+        self._attr_unique_id = walkingpad_unique_id(
+            coordinator.walkingpad_device, BELT_SWITCH_KEY
         )
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
-        )
-        self._attr_suggested_object_id = SWITCH_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        self._attr_suggested_object_id = BELT_SWITCH_KEY
+        self._attr_device_info = walkingpad_device_info(coordinator.walkingpad_device)
         super().__init__()
 
     @property
@@ -157,21 +147,20 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
 
         return belt_state in [BeltState.ACTIVE, BeltState.STARTING]
 
-    def set_temporary_belt_state(self, belt_state: BeltState) -> None:
-        """Set a temporary belt state."""
-        expiration_timestamp = (
+    def _temporary_expiration(self) -> float:
+        """Expiry for a temporary value: one status interval after the last status."""
+        return (
             self.coordinator.data.get("status_timestamp", 0)
             + STATUS_UPDATE_INTERVAL.total_seconds()
         )
-        self._temporary_belt_state.set(belt_state, expiration_timestamp)
+
+    def set_temporary_belt_state(self, belt_state: BeltState) -> None:
+        """Set a temporary belt state."""
+        self._temporary_belt_state.set(belt_state, self._temporary_expiration())
 
     def set_temporary_mode(self, mode: WalkingPadMode) -> None:
         """Set a temporary mode."""
-        expiration_timestamp = (
-            self.coordinator.data.get("status_timestamp", 0)
-            + STATUS_UPDATE_INTERVAL.total_seconds()
-        )
-        self._temporary_mode.set(mode, expiration_timestamp)
+        self._temporary_mode.set(mode, self._temporary_expiration())
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -185,25 +174,14 @@ class WalkingPadBeltSwitchBase(SwitchEntity, ABC):
 class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
     """Represent the WalkingPad belt switch in manual mode."""
 
-    def __init__(self, coordinator: WalkingPadCoordinator):
-        """Initialize the belt switch."""
-        super().__init__(coordinator)
-        # Use the unified "Belt" translation_key. The mode (manual vs auto)
-        # is internal config — surfacing it in the entity name has caused
-        # confusion when the entity_id, friendly_name, and translation_key
-        # diverge after a mode change.
-        self.entity_description = self._create_entity_description(
-            "walkingpad_belt"
-        )
-
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on.
 
-        Stay-connected is left as the user set it.  If they had it off,
-        the WalkingPad library will connect for the start command and
-        disconnect right after; the belt will keep running but live
-        sensors will go stale until the user manually re-enables
-        Stay-connected.
+        Stay-connected is left as the user set it. If they had it off,
+        the WalkingPad wrapper connects for the start command and drops
+        the link 5 s after the last command; the belt keeps running, but
+        the live sensors become unavailable until Stay-connected is
+        re-enabled.
         """
         self.set_temporary_mode(WalkingPadMode.MANUAL)
         self.set_temporary_belt_state(BeltState.STARTING)
@@ -235,13 +213,6 @@ class WalkingPadBeltSwitchManual(WalkingPadBeltSwitchBase):
 
 class WalkingPadBeltSwitchAuto(WalkingPadBeltSwitchBase):
     """Represent the WalkingPad belt switch in auto mode."""
-
-    def __init__(self, coordinator: WalkingPadCoordinator):
-        """Initialize the belt switch."""
-        super().__init__(coordinator)
-        self.entity_description = self._create_entity_description(
-            "walkingpad_belt"
-        )
 
     @property
     def is_on(self) -> bool:
@@ -285,9 +256,10 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
     update live.  This is the normal behavior.
 
     When OFF: HA disconnects immediately, freeing the BLE link so the user's
-    smartphone app (e.g. KS Fit) can connect for tracking.  Commands (belt
-    on/off, speed) will still work — they connect, send the command, then
-    disconnect right away.  Sensors go stale until stay_connected is re-enabled.
+    smartphone app (e.g. KS Fit) can connect for tracking. Commands (belt
+    on/off, speed) still work — they connect, send the command, and drop the
+    link 5 s after the last one. Live sensors are unavailable while
+    disconnected, until stay_connected is re-enabled.
 
     State is persisted across HA restarts via RestoreEntity.
     """
@@ -304,17 +276,11 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
             translation_key=STAY_CONNECTED_KEY,
             has_entity_name=True,
         )
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
+        self._attr_unique_id = walkingpad_unique_id(
+            coordinator.walkingpad_device, STAY_CONNECTED_KEY
         )
         self._attr_suggested_object_id = STAY_CONNECTED_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        self._attr_device_info = walkingpad_device_info(coordinator.walkingpad_device)
         super().__init__()
 
     @property
@@ -341,11 +307,11 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
         # Subscribe to coordinator updates so our UI state refreshes
         # whenever the underlying stay_connected flag changes.
         self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_coordinator_update)
+            self.coordinator.async_add_listener(self._handle_state_change)
         )
 
     @callback
-    def _handle_coordinator_update(self) -> None:
+    def _handle_state_change(self) -> None:
         """React to coordinator data updates by refreshing our HA state."""
         self.async_write_ha_state()
 

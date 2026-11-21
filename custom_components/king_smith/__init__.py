@@ -26,7 +26,7 @@ PLATFORMS: list[Platform] = [
 
 
 class WalkingPadIntegrationData(TypedDict):
-    """A type to represent the data stored by the integration for each entity."""
+    """A type to represent the data stored by the integration per config entry."""
 
     device: WalkingPad
     coordinator: WalkingPadCoordinator
@@ -55,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     address = entry.data.get(CONF_MAC)
 
     ble_device = bluetooth.async_ble_device_from_address(
-        hass, entry.data.get(CONF_MAC), connectable=True
+        hass, address, connectable=True
     )
     if ble_device is None:
         # Check if any HA scanner on:
@@ -101,7 +101,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-# One-time entity_id migration. Earlier versions of this integration registered
+# Entity_id migration, run on every setup (idempotent). Earlier versions of this integration registered
 # entities with HA-auto-generated entity_ids derived from the localized
 # friendly_name, leading to inconsistent / collision-prone IDs like
 # `sensor.state`, `switch.stay_connected`, and `sensor.walkingpad_kalorienrate`
@@ -150,45 +150,45 @@ def _async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
         return
 
     entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    for ent in entries:
+    for registry_entry in entries:
         # Each unique_id is `{MAC}-{key}`. Pull the key.
-        if not ent.unique_id.startswith(f"{mac}-"):
+        if not registry_entry.unique_id.startswith(f"{mac}-"):
             continue
-        key = ent.unique_id[len(mac) + 1 :]
+        key = registry_entry.unique_id[len(mac) + 1 :]
 
         desired_slug = _ENTITY_ID_MIGRATIONS.get(key)
         if desired_slug is None:
             continue
-        desired_entity_id = f"{ent.domain}.{desired_slug}"
+        desired_entity_id = f"{registry_entry.domain}.{desired_slug}"
 
         new_translation_key = _TRANSLATION_KEY_MIGRATIONS.get(
-            ent.translation_key or "", ent.translation_key
+            registry_entry.translation_key or "", registry_entry.translation_key
         )
 
         updates: dict[str, str] = {}
         if (
-            ent.entity_id != desired_entity_id
+            registry_entry.entity_id != desired_entity_id
             and entity_registry.async_get(desired_entity_id) is None
         ):
             _LOGGER.info(
-                "Migrating entity_id %s -> %s", ent.entity_id, desired_entity_id
+                "Migrating entity_id %s -> %s", registry_entry.entity_id, desired_entity_id
             )
             updates["new_entity_id"] = desired_entity_id
         if (
             new_translation_key is not None
-            and ent.translation_key != new_translation_key
+            and registry_entry.translation_key != new_translation_key
         ):
             _LOGGER.info(
                 "Migrating translation_key on %s: %s -> %s",
-                ent.entity_id,
-                ent.translation_key,
+                registry_entry.entity_id,
+                registry_entry.translation_key,
                 new_translation_key,
             )
             updates["translation_key"] = new_translation_key
 
         if updates:
             try:
-                entity_registry.async_update_entity(ent.entity_id, **updates)
+                entity_registry.async_update_entity(registry_entry.entity_id, **updates)
             except ValueError as err:
                 # An orphan from a previous registration of the same device
                 # may already occupy the canonical entity_id. Skipping the
@@ -196,6 +196,6 @@ def _async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 # be cleaned up manually from Settings → Entities.
                 _LOGGER.warning(
                     "Skipping entity_id migration for %s: %s",
-                    ent.entity_id,
+                    registry_entry.entity_id,
                     err,
                 )

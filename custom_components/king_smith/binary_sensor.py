@@ -9,13 +9,13 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import WalkingPadIntegrationData
 from .const import DOMAIN
 from .coordinator import WalkingPadCoordinator
+from .entity import WalkingPadPushEntity
 
 
 CONNECTED_KEY = "walkingpad_connected"
@@ -32,17 +32,18 @@ async def async_setup_entry(
     async_add_entities([WalkingPadConnectedBinarySensor(coordinator)])
 
 
-class WalkingPadConnectedBinarySensor(BinarySensorEntity):
+class WalkingPadConnectedBinarySensor(WalkingPadPushEntity, BinarySensorEntity):
     """Reflects whether the BLE link to the WalkingPad is currently up.
 
     Goes off in a few situations the user cares about:
-      * Stay-connected was turned off (and the 5 s idle window has elapsed)
+      * Stay-connected was turned off (the coordinator disconnects right
+        away; after commands the link drops 5 s after the last one)
       * The treadmill dropped the link (weak signal, firmware quirk)
       * The phone app is currently holding the link (BLE is single-client)
-    """
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
+    Re-renders on every coordinator notification, which includes the
+    library's disconnect callback (`_async_handle_disconnect`).
+    """
 
     entity_description = BinarySensorEntityDescription(
         key=CONNECTED_KEY,
@@ -53,18 +54,7 @@ class WalkingPadConnectedBinarySensor(BinarySensorEntity):
 
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the binary sensor."""
-        self.coordinator = coordinator
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{CONNECTED_KEY}"
-        )
-        self._attr_suggested_object_id = CONNECTED_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        super().__init__(coordinator, CONNECTED_KEY)
 
     @property
     def is_on(self) -> bool:
@@ -73,23 +63,5 @@ class WalkingPadConnectedBinarySensor(BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        """The connectivity sensor is always available — it has a meaningful
-        value (False) even when the link is down."""
+        """Return True: the sensor has a meaningful value (off) even when the link is down."""
         return True
-
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to coordinator updates so we re-render on state changes.
-
-        The coordinator notifies its listeners on every status update *and*
-        on the library's disconnect callback (`_async_handle_disconnect`),
-        which is enough to track the BLE link state with negligible lag.
-        """
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_state_change)
-        )
-
-    @callback
-    def _handle_state_change(self) -> None:
-        """Re-render in response to coordinator updates."""
-        self.async_write_ha_state()

@@ -52,6 +52,19 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 ).extend(BASE_SCHEMA)
 
 
+def _options_from_input(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Return the entry options from a submitted remote-control section."""
+    remote_control_data = user_input.get(CONF_REMOTE_CONTROL, {})
+    return {
+        CONF_REMOTE_CONTROL_ENABLED: remote_control_data.get(
+            CONF_REMOTE_CONTROL_ENABLED, False
+        ),
+        CONF_PREFERRED_MODE: remote_control_data.get(
+            CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE
+        ),
+    }
+
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
@@ -99,21 +112,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(dr.format_mac(info[CONF_MAC]))
                 self._abort_if_unique_id_configured()
 
-                remote_control_data = user_input.get(CONF_REMOTE_CONTROL, {})
-                remote_control_enabled = remote_control_data.get(
-                    CONF_REMOTE_CONTROL_ENABLED, False
-                )
-                preferred_mode = remote_control_data.get(
-                    CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE
-                )
-
                 return self.async_create_entry(
                     title=info[CONF_NAME],
                     data=info,
-                    options={
-                        CONF_REMOTE_CONTROL_ENABLED: remote_control_enabled,
-                        CONF_PREFERRED_MODE: preferred_mode,
-                    },
+                    options=_options_from_input(user_input),
                 )
 
         return self.async_show_form(
@@ -154,14 +156,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(dr.format_mac(self.discovered_device["address"]))
         self._abort_if_unique_id_configured()
 
-        remote_control_data = user_input.get(CONF_REMOTE_CONTROL, {})
-        remote_control_enabled = remote_control_data.get(
-            CONF_REMOTE_CONTROL_ENABLED, False
-        )
-        preferred_mode = remote_control_data.get(
-            CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE
-        )
-
         entry_data = {
             CONF_MAC: user_input[CONF_MAC],
             CONF_NAME: user_input[CONF_NAME],
@@ -170,10 +164,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=user_input[CONF_NAME],
             data=entry_data,
-            options={
-                CONF_REMOTE_CONTROL_ENABLED: remote_control_enabled,
-                CONF_PREFERRED_MODE: preferred_mode,
-            },
+            options=_options_from_input(user_input),
         )
 
 
@@ -185,20 +176,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            remote_control_data = user_input.get(CONF_REMOTE_CONTROL, {})
-            remote_control_enabled = remote_control_data.get(
-                CONF_REMOTE_CONTROL_ENABLED, False
-            )
-            preferred_mode = remote_control_data.get(
-                CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE
-            )
-
             return self.async_create_entry(
-                title="",
-                data={
-                    CONF_REMOTE_CONTROL_ENABLED: remote_control_enabled,
-                    CONF_PREFERRED_MODE: preferred_mode,
-                },
+                title="", data=_options_from_input(user_input)
             )
 
         remote_control_enabled = self.config_entry.options.get(
