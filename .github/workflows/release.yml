@@ -37,7 +37,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: "Checkout the repository"
-        uses: "actions/checkout@v4.2.2"
+        uses: "actions/checkout@v7.0.1"
         with:
           ref: "${{ steps.tag.outputs.tag }}"
 
