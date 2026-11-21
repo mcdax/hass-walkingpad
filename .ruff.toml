@@ -47,3 +47,7 @@ keep-runtime-typing = true
 
 [lint.mccabe]
 max-complexity = 25
+
+[lint.per-file-ignores]
+# Tests don't need docstrings on every helper and test function.
+"tests/*" = ["D"]

@@ -1,0 +1,37 @@
+name: "Test"
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: "Smoke tests"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Checkout the repository"
+        uses: "actions/checkout@v4"
+
+      - name: "Set up Python"
+        uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: "Install requirements"
+        # The library version comes from manifest.json, not requirements.txt.
+        run: |
+          python3 -m pip install -r requirements.txt pytest
+          # homeassistant 2025.8's aiodns pin breaks with pycares 5.
+          python3 -m pip install "pycares<5"
+          python3 -m pip install "$(python3 -c "import json; print(next(r for r in json.load(open('custom_components/king_smith/manifest.json'))['requirements'] if r.startswith('walkingpad-controller')))")"
+
+      - name: "Run"
+        run: python3 -m pytest -q tests
