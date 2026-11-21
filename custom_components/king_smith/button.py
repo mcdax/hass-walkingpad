@@ -7,16 +7,14 @@ from homeassistant.components.button import (
     ButtonEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from homeassistant.helpers.entity import EntityCategory
-
 from . import WalkingPadIntegrationData
-from .const import CONF_MAC, CONF_REMOTE_CONTROL_ENABLED, DOMAIN
+from .const import CONF_REMOTE_CONTROL_ENABLED, DOMAIN
 from .coordinator import WalkingPadCoordinator
+from .entity import WalkingPadPushEntity, async_remove_stale_entities
 
 
 STOP_SESSION_KEY = "walkingpad_stop_session"
@@ -48,15 +46,10 @@ async def async_setup_entry(
 
     # Remote control was disabled — clean up the entity if it existed
     # from a previous configuration.
-    entity_registry = er.async_get(hass)
-    mac_address = entry.data.get(CONF_MAC)
-    unique_id = f"{mac_address}-{STOP_SESSION_KEY}"
-    entity_id = entity_registry.async_get_entity_id("button", DOMAIN, unique_id)
-    if entity_id:
-        entity_registry.async_remove(entity_id)
+    async_remove_stale_entities(hass, entry, "button", (STOP_SESSION_KEY,))
 
 
-class WalkingPadStopSessionButton(ButtonEntity):
+class WalkingPadStopSessionButton(WalkingPadPushEntity, ButtonEntity):
     """Hard-stop the WalkingPad and reset the session counters.
 
     Different from toggling the belt switch off — that path now sends
@@ -70,12 +63,9 @@ class WalkingPadStopSessionButton(ButtonEntity):
     user's next action).
     """
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-
     # No entity_category — the Stop button is a primary user-facing control,
-    # so it lives in "Steuerelemente" / Controls alongside the belt switch
-    # and speed slider, not buried under "Konfiguration" / Diagnostics.
+    # so it lives under Controls alongside the belt switch and speed slider,
+    # not under Diagnostic.
     entity_description = ButtonEntityDescription(
         key=STOP_SESSION_KEY,
         icon="mdi:stop",
@@ -84,18 +74,7 @@ class WalkingPadStopSessionButton(ButtonEntity):
 
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the Stop button."""
-        self.coordinator = coordinator
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{STOP_SESSION_KEY}"
-        )
-        self._attr_suggested_object_id = STOP_SESSION_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        super().__init__(coordinator, STOP_SESSION_KEY)
 
     @property
     def available(self) -> bool:
@@ -106,21 +85,8 @@ class WalkingPadStopSessionButton(ButtonEntity):
         """Send a hard stop — full session end, counters reset."""
         await self.coordinator.walkingpad_device.stop_belt()
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to coordinator updates so `available` re-renders on
-        connect / disconnect events."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_state_change)
-        )
 
-    @callback
-    def _handle_state_change(self) -> None:
-        """Re-render — picks up changes to `coordinator.connected`."""
-        self.async_write_ha_state()
-
-
-class WalkingPadReconnectButton(ButtonEntity):
+class WalkingPadReconnectButton(WalkingPadPushEntity, ButtonEntity):
     """Force an immediate BLE reconnect attempt.
 
     Addresses the "reconnect takes a while / feels random" pain (issue #4):
@@ -133,11 +99,8 @@ class WalkingPadReconnectButton(ButtonEntity):
     do, so the button greys out (the inverse of the Stop button).
     """
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-
     # Connectivity housekeeping rather than a primary workout control, so it
-    # lives under "Konfiguration" / Diagnostics next to the Connected sensor.
+    # lives under Diagnostic next to the Connected sensor.
     entity_description = ButtonEntityDescription(
         key=RECONNECT_KEY,
         icon="mdi:bluetooth-connect",
@@ -147,18 +110,7 @@ class WalkingPadReconnectButton(ButtonEntity):
 
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the Reconnect button."""
-        self.coordinator = coordinator
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{RECONNECT_KEY}"
-        )
-        self._attr_suggested_object_id = RECONNECT_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        super().__init__(coordinator, RECONNECT_KEY)
 
     @property
     def available(self) -> bool:
@@ -168,16 +120,3 @@ class WalkingPadReconnectButton(ButtonEntity):
     async def async_press(self) -> None:
         """Kick an immediate reconnect attempt."""
         await self.coordinator.async_reconnect_now()
-
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to coordinator updates so `available` re-renders on
-        connect / disconnect events."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_state_change)
-        )
-
-    @callback
-    def _handle_state_change(self) -> None:
-        """Re-render — picks up changes to `coordinator.connected`."""
-        self.async_write_ha_state()

@@ -19,11 +19,18 @@ _LOGGER = logging.getLogger(__name__)
 
 STATUS_UPDATE_INTERVAL = timedelta(seconds=5)
 
-# Must accommodate the library's full connect-retry cycle (FTMS: up to 5 ×
-# 10 s + small gaps ≈ 55 s). Cancelling mid-cycle leaves Bleak in a flaky
-# state and used to leak the WalkingPad's CONNECTING status, jamming all
-# subsequent reconnects until something kicked it loose.
+# Generous upper bound for one poll. It was sized for the library's full
+# connect-retry cycle (FTMS: up to 5 × 10 s + small gaps ≈ 55 s); the
+# integration now caps the library at one attempt (see walkingpad.py), but
+# the margin is kept. Cancelling mid-cycle leaves Bleak in a flaky state and
+# used to leak the WalkingPad's CONNECTING status, jamming all subsequent
+# reconnects until something kicked it loose.
 STATUS_UPDATE_TIMEOUT_SECONDS = 60
+
+# Reconnect backoff: try right away, ramp up, then retry every 30 s for as
+# long as stay_connected is on.
+RECONNECT_INITIAL_DELAYS_SECONDS = (0, 2, 5, 10, 15)
+RECONNECT_SUSTAINED_DELAY_SECONDS = 30
 
 class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     """WalkingPad coordinator."""
@@ -36,7 +43,6 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             name=DOMAIN,
             always_update=False,
             update_interval=STATUS_UPDATE_INTERVAL,
-            update_method=None,
         )
         self.walkingpad_device = walkingpad_device
         self.walkingpad_device.register_status_callback(self._async_handle_update)
@@ -106,8 +112,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         """
         if self._firmware_pushed:
             return
-        fw = self.walkingpad_device.firmware_version
-        if not fw:
+        firmware_version = self.walkingpad_device.firmware_version
+        if not firmware_version:
             return
         device_registry = dr.async_get(self.hass)
         device = device_registry.async_get_device(
@@ -115,8 +121,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         )
         if device is None:
             return
-        if device.sw_version != fw:
-            device_registry.async_update_device(device.id, sw_version=fw)
+        if device.sw_version != firmware_version:
+            device_registry.async_update_device(device.id, sw_version=firmware_version)
         self._firmware_pushed = True
 
     @callback
@@ -136,7 +142,10 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         might just be powered off and the user could turn it on at any
         moment.
         """
-        for delay in itertools.chain((0, 2, 5, 10, 15), itertools.repeat(30)):
+        for delay in itertools.chain(
+            RECONNECT_INITIAL_DELAYS_SECONDS,
+            itertools.repeat(RECONNECT_SUSTAINED_DELAY_SECONDS),
+        ):
             try:
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:
@@ -165,10 +174,6 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             name="walkingpad-reconnect",
         )
 
-    async def _async_connect(self, *_) -> None:
-        """Connect to the device."""
-        await self.walkingpad_device.connect()
-
     async def _async_disconnect(self, *_) -> None:
         """Disconnect the device."""
         await self.walkingpad_device.disconnect()
@@ -194,8 +199,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
 
         Only disconnect the BLE link if Stay-connected is OFF — when it's
         ON the user has explicitly opted in to a persistent connection
-        and we should keep it alive even while they're on a different
-        HA page (so coming back doesn't show a disconnected device).
+        and we keep it alive even when no entity is listening (e.g. while
+        the platforms reload after an options change).
         """
         if not self.walkingpad_device.stay_connected:
             async_call_later(
@@ -262,7 +267,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if task is None or task.done():
             return
         task.cancel()
-        try:
+        try:  # noqa: SIM105 - keep exact except semantics (no exception groups)
             await task
         except (asyncio.CancelledError, Exception):
             pass

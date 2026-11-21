@@ -14,7 +14,6 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfLength, UnitOfSpeed, UnitOfTime
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -26,9 +25,9 @@ from .const import (
     BeltState,
     ProtocolType,
     WalkingPadMode,
-    WalkingPadStatus,
 )
 from .coordinator import WalkingPadCoordinator
+from .entity import walkingpad_device_info, walkingpad_unique_id
 
 
 @dataclass(kw_only=True)
@@ -194,15 +193,15 @@ FTMS_SENSORS: tuple[WalkingPadSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         translation_key="walkingpad_heart_rate",
-        # Treadmill reports 0 when no HR strap is paired — mark unavailable
-        # rather than report a misleading "0 bpm".
+        # Treadmill reports 0 when no HR strap is paired — report unknown
+        # rather than a misleading "0 bpm".
         value_fn=lambda coord: coord.data.get("heart_rate", 0) or None,
     ),
     # Training Status sensor was removed — walkingpad-controller 0.4.6
     # no longer subscribes to Training Status (0x2AD3) on connect to
     # cut a CCCD write off the connect path on marginal-signal hardware
     # (see https://github.com/mcdax/walkingpad-controller/releases/tag/v0.4.6).
-    # The field remains in the coord data structure (defaulted to 0)
+    # Status updates still carry `training_status` (0 unless subscribed),
     # so a future opt-in re-subscribe doesn't need a coord-API change.
     WalkingPadSensorEntityDescription(
         device_class=SensorDeviceClass.ENUM,
@@ -296,21 +295,16 @@ class WalkingPadSensor(
         super().__init__(coordinator)
 
         self.entity_description = entity_description
-        self._attr_unique_id = (
-            f"{coordinator.walkingpad_device.mac}-{self.entity_description.key}"
+        self._attr_unique_id = walkingpad_unique_id(
+            coordinator.walkingpad_device, self.entity_description.key
         )
-        # Pin the entity_id to a stable English slug derived from the
-        # description key, so HA doesn't auto-generate it from the
-        # localized friendly_name (which led to inconsistent IDs like
-        # `sensor.walkingpad_kalorienrate` in the past).
+        # Suggest a stable English entity_id slug derived from the
+        # description key for new entities, so HA doesn't generate it from
+        # the localized friendly_name (which led to inconsistent IDs like
+        # `sensor.walkingpad_kalorienrate` in the past). Existing entities
+        # are brought in line by `_async_migrate_entity_ids`.
         self._attr_suggested_object_id = self.entity_description.key
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        self._attr_device_info = walkingpad_device_info(coordinator.walkingpad_device)
 
     @property
     def native_value(self) -> StateType:

@@ -2,7 +2,7 @@
 
 This module provides a WalkingPad class that wraps the walkingpad-controller
 library's WalkingPadController, adding Home Assistant-specific features:
-  - WalkingPadConnectionStatus enum (for coordinator)
+  - WalkingPadConnectionStatus enum (tracks connecting vs. connected)
   - stay_connected toggle (persistent BLE vs. connect-per-command)
   - Status mapping from TreadmillStatus -> WalkingPadStatus (TypedDict)
 
@@ -12,6 +12,7 @@ recovery, and pending speed management are all handled by the library.
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from enum import Enum, unique
 
 from bleak.backends.device import BLEDevice
@@ -25,14 +26,15 @@ from walkingpad_controller import (
     WalkingPadController,
 )
 
+from .const import WalkingPadMode, WalkingPadStatus
+
 # The library does its own 5-attempt internal retry on connect() with 3 s
 # between attempts (~16 s wasted on a single "no-slot" cycle). Our coordinator
 # already runs a reconnect loop with backoff, so the library's retry layer
 # just slows down the time-to-first-success when the BLE stack briefly has no
-# slot. One internal attempt is enough; our loop handles retries.
+# slot. One internal attempt is enough; our loop handles retries. (The
+# library reads this module global at call time.)
 _wpc_controller.MAX_CONNECT_RETRIES = 1
-
-from .const import WalkingPadMode, WalkingPadStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +43,9 @@ _LOGGER = logging.getLogger(__name__)
 # set_speed) reset the timer so the BLE link is held for the whole burst,
 # avoiding connect/disconnect churn between them.
 IDLE_DISCONNECT_TIMEOUT_SECONDS = 5.0
+
+# Pause between switching mode and starting the belt in start_belt_in_mode().
+MODE_SWITCH_SETTLE_SECONDS = 1.5
 
 
 @unique
@@ -62,8 +67,8 @@ class WalkingPad:
     def __init__(self, name: str, ble_device: BLEDevice) -> None:
         """Create a WalkingPad object."""
         self._controller = WalkingPadController(ble_device=ble_device, name=name)
-        self._callbacks = []
-        self._disconnect_callbacks = []
+        self._callbacks: list[Callable[[WalkingPadStatus], None]] = []
+        self._disconnect_callbacks: list[Callable[[], None]] = []
         self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
         # BLE operation lock — serialises all BLE operations so coordinator
@@ -143,23 +148,25 @@ class WalkingPad:
             except Exception:
                 _LOGGER.exception("Error in disconnect callback")
 
-    def register_status_callback(self, callback) -> None:
+    def register_status_callback(
+        self, callback: Callable[[WalkingPadStatus], None]
+    ) -> None:
         """Register a status callback."""
         self._callbacks.append(callback)
 
-    def register_disconnect_callback(self, callback) -> None:
+    def register_disconnect_callback(self, callback: Callable[[], None]) -> None:
         """Register a callback fired when the BLE link drops."""
         self._disconnect_callbacks.append(callback)
 
     # --- Properties ---
 
     @property
-    def mac(self):
+    def mac(self) -> str:
         """Mac address."""
         return self._controller.address
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Name."""
         return self._controller.name
 
@@ -323,6 +330,32 @@ class WalkingPad:
                 _LOGGER.warning("Bluetooth error during state update: %s", err)
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
+    async def _run_command(self, command: Callable[[], Awaitable[object]]) -> None:
+        """Run one library command under the BLE lock; see `_run_command_unlocked`."""
+        async with self._ble_lock:
+            await self._run_command_unlocked(command)
+
+    async def _run_command_unlocked(
+        self, command: Callable[[], Awaitable[object]]
+    ) -> None:
+        """Connect if needed, run ``command()``, then schedule the idle disconnect.
+
+        Caller must hold _ble_lock. Only connects from NOT_CONNECTED (not
+        while a reconnect is CONNECTING); a BLE error marks the link down.
+        """
+        if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
+            await self.connect()
+        if not self.connected:
+            return
+
+        try:
+            await command()
+        except BleakError as err:
+            _LOGGER.warning("Bluetooth error: %s", err)
+            self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+        finally:
+            await self.disconnect_after_command()
+
     async def start_belt(self) -> None:
         """Start the belt."""
         async with self._ble_lock:
@@ -330,18 +363,7 @@ class WalkingPad:
 
     async def _start_belt_unlocked(self) -> None:
         """Start the belt (caller must hold _ble_lock)."""
-        if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-            await self.connect()
-        if not self.connected:
-            return
-
-        try:
-            await self._controller.start()
-        except BleakError as err:
-            _LOGGER.warning("Bluetooth error: %s", err)
-            self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-        finally:
-            await self.disconnect_after_command()
+        await self._run_command_unlocked(lambda: self._controller.start())
 
     async def stop_belt(self) -> None:
         """Stop the belt — full session end. Resets counters.
@@ -350,19 +372,7 @@ class WalkingPad:
         the phone-app behaviour where the user's stop button preserves
         time/distance/steps across the pause/resume cycle.
         """
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
-            if not self.connected:
-                return
-
-            try:
-                await self._controller.stop()
-            except BleakError as err:
-                _LOGGER.warning("Bluetooth error: %s", err)
-                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-            finally:
-                await self.disconnect_after_command()
+        await self._run_command(lambda: self._controller.stop())
 
     async def pause_belt(self) -> None:
         """Pause the belt — session stays live, counters preserved.
@@ -372,35 +382,11 @@ class WalkingPad:
         A subsequent ``start_belt()`` resumes the session and continues
         accumulating time/distance/steps from where it left off.
         """
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
-            if not self.connected:
-                return
-
-            try:
-                await self._controller.pause()
-            except BleakError as err:
-                _LOGGER.warning("Bluetooth error: %s", err)
-                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-            finally:
-                await self.disconnect_after_command()
+        await self._run_command(lambda: self._controller.pause())
 
     async def set_speed(self, speed: float) -> None:
         """Set the belt speed in km/h."""
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
-            if not self.connected:
-                return
-
-            try:
-                await self._controller.set_speed(speed)
-            except BleakError as err:
-                _LOGGER.warning("Bluetooth error: %s", err)
-                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-            finally:
-                await self.disconnect_after_command()
+        await self._run_command(lambda: self._controller.set_speed(speed))
 
     async def set_vibration(self, level: int) -> None:
         """Set the vibration level (0 = off, 1-4).
@@ -409,19 +395,7 @@ class WalkingPad:
         vibration motor are mutually exclusive — turning vibration on stops
         the belt.
         """
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
-            if not self.connected:
-                return
-
-            try:
-                await self._controller.set_vibration(level)
-            except BleakError as err:
-                _LOGGER.warning("Bluetooth error: %s", err)
-                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-            finally:
-                await self.disconnect_after_command()
+        await self._run_command(lambda: self._controller.set_vibration(level))
 
     async def set_incline(self, level: int) -> None:
         """Set the incline level (0 = flat .. 10 = max).
@@ -430,19 +404,7 @@ class WalkingPad:
         so the library only applies it while the belt is moving; when stopped
         it caches the target and applies it on the next start.
         """
-        async with self._ble_lock:
-            if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-                await self.connect()
-            if not self.connected:
-                return
-
-            try:
-                await self._controller.set_incline(level)
-            except BleakError as err:
-                _LOGGER.warning("Bluetooth error: %s", err)
-                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-            finally:
-                await self.disconnect_after_command()
+        await self._run_command(lambda: self._controller.set_incline(level))
 
     async def switch_mode(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode."""
@@ -451,20 +413,11 @@ class WalkingPad:
 
     async def _switch_mode_unlocked(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode (caller must hold _ble_lock)."""
-        if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
-            await self.connect()
-        if not self.connected:
-            return
-
-        try:
-            # Map HA WalkingPadMode to library OperatingMode
-            lib_mode = OperatingMode(mode.value)
-            await self._controller.switch_mode(lib_mode)
-        except BleakError as err:
-            _LOGGER.warning("Bluetooth error: %s", err)
-            self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
-        finally:
-            await self.disconnect_after_command()
+        # Map HA WalkingPadMode to library OperatingMode inside the command,
+        # so it runs within the command's error handling as before.
+        await self._run_command_unlocked(
+            lambda: self._controller.switch_mode(OperatingMode(mode.value))
+        )
 
     async def start_belt_in_mode(self, mode: WalkingPadMode) -> None:
         """Switch mode and start the belt atomically.
@@ -474,7 +427,7 @@ class WalkingPad:
         """
         async with self._ble_lock:
             await self._switch_mode_unlocked(mode)
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(MODE_SWITCH_SETTLE_SECONDS)
             await self._start_belt_unlocked()
 
     # --- Speed properties (delegated to library) ---

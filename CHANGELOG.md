@@ -8,6 +8,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Internal cleanup without behaviour changes: shared entity helpers
+  (`entity.py`), one code path for all BLE commands, config-flow option
+  helper, removed dead code, corrected comments, ruff-clean.
+
 ## [0.6.0] - 2026-11-21
 
 ### Added

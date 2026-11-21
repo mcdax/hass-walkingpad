@@ -8,25 +8,27 @@ from homeassistant.components.number import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfSpeed
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import WalkingPadIntegrationData
 from .const import (
-    CONF_MAC,
     CONF_PREFERRED_MODE,
     CONF_REMOTE_CONTROL_ENABLED,
     DEFAULT_PREFERRED_MODE,
     DOMAIN,
+    PREFERRED_MODE_MANUAL,
     BeltState,
     ProtocolType,
-    WalkingPadMode,
 )
 from .coordinator import WalkingPadCoordinator
+from .entity import (
+    async_remove_stale_entities,
+    walkingpad_device_info,
+    walkingpad_unique_id,
+)
 
-NUMBER_KEY = "walkingpad_speed"
+SPEED_KEY = "walkingpad_speed"
 VIBRATION_KEY = "walkingpad_vibration"
 INCLINE_KEY = "walkingpad_incline"
 
@@ -38,16 +40,11 @@ async def async_setup_entry(
 
     remote_control_enabled = entry.options.get(CONF_REMOTE_CONTROL_ENABLED, False)
     preferred_mode = entry.options.get(CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE)
-    manual_mode = WalkingPadMode.MANUAL.name.lower()
 
-    if not (remote_control_enabled and preferred_mode == manual_mode):
-        entity_registry = er.async_get(hass)
-        mac_address = entry.data.get(CONF_MAC)
-        for key in (NUMBER_KEY, VIBRATION_KEY, INCLINE_KEY):
-            unique_id = f"{mac_address}-{key}"
-            entity_id = entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
-            if entity_id:
-                entity_registry.async_remove(entity_id)
+    if not (remote_control_enabled and preferred_mode == PREFERRED_MODE_MANUAL):
+        async_remove_stale_entities(
+            hass, entry, "number", (SPEED_KEY, VIBRATION_KEY, INCLINE_KEY)
+        )
         return
 
     entry_data: WalkingPadIntegrationData = hass.data[DOMAIN][entry.entry_id]
@@ -77,20 +74,15 @@ class WalkingPadSpeedNumberEntity(
     _attr_device_class = NumberDeviceClass.SPEED
     _attr_native_unit_of_measurement = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_has_entity_name = True
-    _attr_translation_key = "walkingpad_speed"
+    _attr_translation_key = SPEED_KEY
 
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the speed number."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{NUMBER_KEY}"
-        self._attr_suggested_object_id = NUMBER_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="KingSmith",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        device = coordinator.walkingpad_device
+        self._attr_unique_id = walkingpad_unique_id(device, SPEED_KEY)
+        self._attr_suggested_object_id = SPEED_KEY
+        self._attr_device_info = walkingpad_device_info(device)
 
     @property
     def native_min_value(self) -> float:
@@ -132,8 +124,6 @@ class WalkingPadSpeedNumberEntity(
         changes while the belt is moving, so we keep the existing
         belt-state guard for them.
         """
-        from .const import ProtocolType
-
         device = self.coordinator.walkingpad_device
         belt_state = self.coordinator.data.get("belt_state")
 
@@ -149,11 +139,11 @@ class WalkingPadSpeedNumberEntity(
     def available(self) -> bool:
         """The slider stays available even when the BLE link is down.
 
-        On FTMS devices `set_native_value` triggers a connect-and-set
-        sequence, so the user can drag the slider to start a walk
-        directly without first toggling Stay-connected on. On WiLink
-        devices the slider is hidden (entity removed) when remote
-        control isn't enabled, so this only ever matters for FTMS.
+        `set_native_value` connects as needed, so on FTMS and Sperax the
+        user can drag the slider to start a walk without first toggling
+        Stay-connected on. WiLink only accepts speed changes while the belt
+        moves (see `async_set_native_value`). The slider only exists with
+        remote control in manual mode.
         """
         return True
 
@@ -178,15 +168,10 @@ class WalkingPadVibrationNumberEntity(
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the vibration number."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{VIBRATION_KEY}"
+        device = coordinator.walkingpad_device
+        self._attr_unique_id = walkingpad_unique_id(device, VIBRATION_KEY)
         self._attr_suggested_object_id = VIBRATION_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="Sperax",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        self._attr_device_info = walkingpad_device_info(device, manufacturer="Sperax")
 
     @property
     def native_value(self) -> float | None:
@@ -220,15 +205,10 @@ class WalkingPadInclineNumberEntity(
     def __init__(self, coordinator: WalkingPadCoordinator) -> None:
         """Initialize the incline number."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.walkingpad_device.mac}-{INCLINE_KEY}"
+        device = coordinator.walkingpad_device
+        self._attr_unique_id = walkingpad_unique_id(device, INCLINE_KEY)
         self._attr_suggested_object_id = INCLINE_KEY
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.walkingpad_device.mac)},
-            name=coordinator.walkingpad_device.name,
-            manufacturer="Sperax",
-            model=coordinator.walkingpad_device.name,
-            sw_version=coordinator.walkingpad_device.firmware_version or None,
-        )
+        self._attr_device_info = walkingpad_device_info(device, manufacturer="Sperax")
 
     @property
     def native_value(self) -> float | None:
