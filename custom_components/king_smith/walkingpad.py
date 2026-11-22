@@ -95,6 +95,11 @@ class WalkingPad:
         # Set whenever no connect() is in flight; commands wait on it.
         self._connect_done = asyncio.Event()
         self._connect_done.set()
+        # Bumped whenever the idle timer is (re)armed or cancelled; a timer
+        # that fired but finds a newer generation under the lock is stale.
+        self._idle_generation = 0
+        # Set by close() on unload: no new connects or commands.
+        self._closed = False
 
         # Register library callbacks
         self._controller.register_status_callback(self._on_library_status_update)
@@ -237,31 +242,35 @@ class WalkingPad:
         """Cancel any pending idle-disconnect and start a fresh timer."""
         self._cancel_idle_disconnect()
         self._disconnect_timer_task = asyncio.create_task(
-            self._idle_disconnect_after_timeout(),
+            self._idle_disconnect_after_timeout(self._idle_generation),
             name="walkingpad-idle-disconnect",
         )
 
     def _cancel_idle_disconnect(self) -> None:
         """Cancel the idle-disconnect timer if it's pending."""
+        self._idle_generation += 1
         task = self._disconnect_timer_task
         if task is not None and not task.done():
             task.cancel()
         self._disconnect_timer_task = None
 
-    async def _idle_disconnect_after_timeout(self) -> None:
+    async def _idle_disconnect_after_timeout(self, generation: int) -> None:
         """Wait for the idle timeout, then disconnect under the BLE lock."""
         try:
             await asyncio.sleep(IDLE_DISCONNECT_TIMEOUT_SECONDS)
         except asyncio.CancelledError:
             return
-        # From here on this is a BLE operation, not a pending timer: a command
-        # arriving now must wait for it (BLE lock) instead of cancelling it
-        # mid-disconnect.
-        if self._disconnect_timer_task is asyncio.current_task():
-            self._disconnect_timer_task = None
         # Re-check under the BLE lock so we don't race with a command
         # that started during the sleep.
         async with self._ble_lock:
+            if generation != self._idle_generation:
+                # A command ran (or a connect started) after this timer was
+                # armed; its own, newer timer decides.
+                return
+            # From here on this is a BLE operation, not a pending timer: a
+            # connect() arriving now must not cancel it midway.
+            if self._disconnect_timer_task is asyncio.current_task():
+                self._disconnect_timer_task = None
             if self._stay_connected:
                 _LOGGER.debug("Idle timer fired but stay_connected is on; skipping")
                 return
@@ -275,8 +284,15 @@ class WalkingPad:
 
     # --- Connection ---
 
+    def close(self) -> None:
+        """Refuse new connects and commands (entry unload)."""
+        self._closed = True
+        self._cancel_idle_disconnect()
+
     async def connect(self) -> None:
         """Connect to the device."""
+        if self._closed:
+            return
         # An incoming connection request invalidates any pending
         # idle-disconnect — we're about to use the link.
         self._cancel_idle_disconnect()
@@ -363,6 +379,10 @@ class WalkingPad:
         reaching the device, a BLE error or a command the library reports as
         failed raises HomeAssistantError, so the user sees it.
         """
+        if self._closed:
+            if required:
+                raise HomeAssistantError("WalkingPad integration is unloading")
+            return
         if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
             try:
                 async with asyncio.timeout(CONNECT_WAIT_SECONDS):
@@ -371,7 +391,7 @@ class WalkingPad:
                 _LOGGER.warning("Connect still in progress after %ss", CONNECT_WAIT_SECONDS)
         if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
             await self.connect()
-        if not self.connected:
+        if not self.connected or self._closed:
             if required:
                 raise HomeAssistantError("WalkingPad is not reachable")
             return

@@ -96,6 +96,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # disconnect callback don't leak across reloads — otherwise the
         # next coordinator's events fire 2x, 3x, … per reload.
         if integration_data is not None:
+            # No new connects or commands (e.g. a stop waiting for a
+            # reconnect) while and after the coordinator shuts down.
+            integration_data["device"].close()
             await integration_data["coordinator"].async_shutdown()
 
     return unload_ok

@@ -143,6 +143,8 @@ def make_pad(status, fail, trace):
     pad._disconnect_timer_task = None
     pad._connect_done = asyncio.Event()
     pad._connect_done.set()
+    pad._closed = False
+    pad._idle_generation = 0
 
     async def connect():
         trace.append("connect")
@@ -246,3 +248,45 @@ def test_belt_controls_stay_available_while_disconnected(monkeypatch):
         entity.coordinator.connected = False
     for key in ("walkingpad_stop_session", "walkingpad_belt_switch", "walkingpad_speed"):
         assert by_key[key].available, key
+
+
+def test_no_commands_after_close():
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+    pad._closed = True
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    asyncio.run(pad.set_speed(2.0))
+    assert trace == []  # neither connected nor sent
+
+
+def test_stale_idle_timer_does_not_cut_a_fresh_command(monkeypatch):
+    # The timer fires while a command holds the BLE lock; the command arms
+    # a new timer, so the old one must not disconnect when it gets the lock.
+    monkeypatch.setattr(walkingpad, "IDLE_DISCONNECT_TIMEOUT_SECONDS", 0.01)
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, False, trace)
+    pad._stay_connected = False
+
+    async def disconnect():
+        trace.append("disconnect")
+
+    pad.disconnect = disconnect
+
+    async def run():
+        await pad._ble_lock.acquire()
+        pad._reschedule_idle_disconnect()
+        old = pad._disconnect_timer_task
+        await asyncio.sleep(0.03)  # old timer fired, waits for the lock
+        pad._reschedule_idle_disconnect()  # the command's new timer
+        pad._ble_lock.release()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert "disconnect" not in trace  # old timer gave up
+        assert old.done()
+        await asyncio.sleep(0.05)  # new timer fires normally
+
+    asyncio.run(run())
+    assert trace == ["disconnect"]
