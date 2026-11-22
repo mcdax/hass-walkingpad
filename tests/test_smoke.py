@@ -141,6 +141,10 @@ def make_pad(status, fail, trace):
     pad._ble_lock = asyncio.Lock()
     pad._stay_connected = True
     pad._disconnect_timer_task = None
+    pad._connect_done = asyncio.Event()
+    pad._connect_done.set()
+    pad._closed = False
+    pad._idle_generation = 0
 
     async def connect():
         trace.append("connect")
@@ -168,8 +172,166 @@ def test_command_connects_runs_and_schedules_idle_disconnect(fail):
     assert pad._connection_status == expected
 
 
-def test_command_does_not_connect_while_a_reconnect_is_running():
+def test_stop_during_a_reconnect_runs_once_the_connect_finishes():
+    # Was: silently dropped while the reconnect loop was CONNECTING.
     trace: list[str] = []
     pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTING, False, trace)
-    asyncio.run(pad.stop_belt())
-    assert trace == []
+
+    async def run():
+        pad._connect_done.clear()
+
+        async def finish_reconnect():
+            await asyncio.sleep(0.01)
+            pad._connection_status = walkingpad.WalkingPadConnectionStatus.CONNECTED
+            pad._connect_done.set()
+
+        asyncio.get_running_loop().create_task(finish_reconnect())
+        await pad.stop_belt()
+
+    asyncio.run(run())
+    assert trace == ["stop", "disconnect_after_command"]
+
+
+def test_stop_reports_an_unreachable_device(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+
+    async def connect_fails():
+        trace.append("connect")
+
+    pad.connect = connect_fails
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    assert trace == ["connect"]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_stop_reports_a_failed_or_rejected_command(fail):
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, fail, trace)
+    if not fail:
+        async def rejected():
+            trace.append("stop")
+            return False
+
+        pad._controller.stop = rejected
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    assert "disconnect_after_command" in trace
+
+
+def test_speed_change_stays_quiet_when_unreachable():
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+
+    async def connect_fails():
+        trace.append("connect")
+
+    pad.connect = connect_fails
+    asyncio.run(pad.set_speed(2.0))  # no exception, unchanged behaviour
+
+
+def test_belt_controls_stay_available_while_disconnected(monkeypatch):
+    # With Stay-connected off the link drops while the belt may still run;
+    # Stop must stay usable then, like the belt switch and the slider.
+    entities, _ = setup_entities(
+        monkeypatch,
+        const.ProtocolType.FTMS,
+        {"remote_control_enabled": True, "preferred_mode": "manual"},
+    )
+    by_key = {e.unique_id.split("-", 1)[1]: e for e in entities}
+    for entity in by_key.values():
+        entity.coordinator.connected = False
+    for key in ("walkingpad_stop_session", "walkingpad_belt_switch", "walkingpad_speed"):
+        assert by_key[key].available, key
+
+
+def test_no_commands_after_close():
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+    pad._closed = True
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    asyncio.run(pad.set_speed(2.0))
+    assert trace == []  # neither connected nor sent
+
+
+def test_stale_idle_timer_does_not_cut_a_fresh_command(monkeypatch):
+    # The timer fires while a command holds the BLE lock; the command arms
+    # a new timer, so the old one must not disconnect when it gets the lock.
+    monkeypatch.setattr(walkingpad, "IDLE_DISCONNECT_TIMEOUT_SECONDS", 0.01)
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, False, trace)
+    pad._stay_connected = False
+
+    async def disconnect():
+        trace.append("disconnect")
+
+    pad.disconnect = disconnect
+
+    async def run():
+        await pad._ble_lock.acquire()
+        pad._reschedule_idle_disconnect()
+        old = pad._disconnect_timer_task
+        await asyncio.sleep(0.03)  # old timer fired, waits for the lock
+        pad._reschedule_idle_disconnect()  # the command's new timer
+        pad._ble_lock.release()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert "disconnect" not in trace  # old timer gave up
+        assert old.done()
+        await asyncio.sleep(0.05)  # new timer fires normally
+
+    asyncio.run(run())
+    assert trace == ["disconnect"]
+
+
+def test_close_during_connect_leaves_no_link():
+    events: list[str] = []
+    gate = None
+
+    class Controller:
+        protocol = const.ProtocolType.FTMS
+
+        async def connect(self):
+            events.append("connect")
+            await gate.wait()
+
+        async def disconnect(self):
+            events.append("disconnect")
+
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, [])
+    del pad.connect  # use the real WalkingPad.connect
+    pad._controller = Controller()
+
+    async def run():
+        nonlocal gate
+        gate = asyncio.Event()
+        task = asyncio.create_task(pad.connect())
+        await asyncio.sleep(0)
+        pad.close()
+        gate.set()
+        await task
+
+    asyncio.run(run())
+    assert events == ["connect", "disconnect"]
+    assert not pad.connected
+
+
+def test_no_idle_timer_after_close():
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, False, [])
+    del pad.disconnect_after_command  # the real one
+    pad._stay_connected = False
+    pad.close()
+
+    async def run():
+        await pad.disconnect_after_command()
+
+    asyncio.run(run())
+    assert pad._disconnect_timer_task is None

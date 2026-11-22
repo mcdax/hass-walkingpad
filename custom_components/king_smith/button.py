@@ -57,10 +57,10 @@ class WalkingPadStopSessionButton(WalkingPadPushEntity, ButtonEntity):
     and start over" action, matching what an end-of-workout button would
     do on the phone app.
 
-    Only available while the BLE link is up. Pressing it while
-    disconnected wouldn't do anything useful (the lib would have to
-    reconnect first, which can take seconds and might race with the
-    user's next action).
+    Stays available while the BLE link is down, like the belt switch and
+    the speed slider: pressing it connects first, then stops. With
+    Stay-connected off the link drops a few seconds after each command
+    even while the belt runs, so this must not be greyed out then.
     """
 
     # No entity_category — the Stop button is a primary user-facing control,
@@ -78,8 +78,8 @@ class WalkingPadStopSessionButton(WalkingPadPushEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
-        """The button is only enabled when the BLE link is up."""
-        return self.coordinator.connected
+        """Always available; `stop_belt` connects as needed."""
+        return True
 
     async def async_press(self) -> None:
         """Send a hard stop — full session end, counters reset."""

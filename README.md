@@ -86,7 +86,7 @@ Once enabled, you need to select a preferred mode that determines how the remote
 #### Manual mode (default)
 
 When manual mode is selected:
-- A **switch entity** is created that directly controls the belt start/stop. Turning the switch on starts the belt, turning it off stops it.
+- A **switch entity** is created that directly controls the belt. Turning the switch on starts (or resumes) the belt, turning it off **pauses** it and keeps the session counters. Use the Stop button to end the session.
 - A **number entity** is created for speed control. The available range and step are read from the device at connection time (for example up to 12 km/h on the Sperax P3 Max), and the slider follows your Home Assistant unit setting (so it can display mph and convert back to km/h for the belt). On FTMS and Sperax devices you can set a speed even while stopped or disconnected — the integration connects and starts the belt as needed. On legacy WiLink devices the speed can only be adjusted while the belt is active or starting.
 
 #### Auto mode
@@ -104,12 +104,12 @@ A **Stay Connected** switch entity is always created (independently of remote co
 - **ON** (connected): The integration maintains a BLE connection for real-time sensor updates. Required for remote control commands.
 - **OFF** (disconnected): The BLE connection is released. Sensors show stale data. Other Bluetooth clients (e.g. KS Fit app) can connect.
 
-Stay Connected stays under your control — the integration does not flip it automatically when you start or stop the belt. With it off, belt and speed commands still work: the integration briefly connects to send the command, then releases the link again.
+Stay Connected stays under your control — the integration does not flip it automatically when you start or stop the belt. With it off, belt and speed commands still work: the integration briefly connects to send the command, then releases the link again 5 seconds after the last command — **even while the belt is running**, so the sensors stop updating during the walk. The belt switch, the speed slider and the Stop button stay usable and connect first when needed.
 
 ### 5. Buttons
 
 - **Reconnect** (always available): forces an immediate BLE reconnect instead of waiting out the automatic retry backoff, which can take up to 30 seconds once the treadmill has been off for a while. It is only enabled while the device is disconnected and lives under Konfiguration / Diagnostics.
-- **Stop** (when remote control is enabled): ends the current session and resets the counters. Different from the belt switch, which pauses and keeps the counters.
+- **Stop** (when remote control is enabled): ends the current session and resets the counters. Different from the belt switch, which pauses and keeps the counters. It is usable while disconnected too (it connects first, and waits for a reconnect that is already in progress). If the stop cannot be sent or the treadmill does not confirm it, Home Assistant shows an error — it is not a replacement for the treadmill's own stop button or safety key.
 
 ### 6. Incline and vibration (Sperax P3 Max)
 
@@ -127,13 +127,14 @@ The original protocol used by most KingSmith/WalkingPad devices, based on the `p
 
 ### FTMS (Fitness Machine Service)
 
-Newer KingSmith treadmills (BLE name matching `KS-HD-*`) use the standard Bluetooth FTMS protocol (service `0x1826`) instead of the proprietary WiLink protocol. The integration auto-detects which protocol to use based on the device's BLE advertisement name.
+Newer KingSmith treadmills (BLE names such as `KS-HD-*`, `KS-AP-*`, `KS-MC21-*`) use the standard Bluetooth FTMS protocol (service `0x1826`) instead of the proprietary WiLink protocol. The integration auto-detects which protocol to use based on the device's BLE advertisement name. If the name entered during manual setup doesn't match a known prefix, the integration remembers the name the treadmill advertises once Home Assistant has seen it (this needs a scan response, i.e. reasonable signal at an active proxy) and otherwise probes the device's services.
 
 **FTMS-specific details:**
 - Speed range and increment are read from the device at connection time (e.g. 1.0-6.0 km/h in 0.1 km/h steps for the KS-Z1D)
 - Sensors: instantaneous speed, total distance, step count, elapsed time
-- Cold start requires the FTMS Start/Resume command before speed can be set
-- The integration handles BLE connection drops during cold start with automatic speed recovery on reconnect
+- Cold start requires the FTMS Start/Resume command before speed can be set; the speed is only sent once the belt moves
+- After Stop, a new start or speed change waits until the belt has run down (otherwise the KS-Z1D ignores it)
+- After a BLE connection drop the integration reconnects automatically while Stay Connected is on; commands are not replayed
 
 ### Sperax (wi-linktech WLT6200)
 
@@ -145,12 +146,17 @@ Protocol detection is name-based first (with the prefixes above), and falls back
 
 Brand | Device | BLE Name | Protocol
 -- | -- | -- | --
-KingSmith | KS-Z1D | KS-HD-Z1D | FTMS |
-KingSmith | R3 (KS-R3Q) | KS-AP-RQ3 | FTMS ¹
+KingSmith | KS-Z1D | KS-HD-Z1D | FTMS ¹
+KingSmith | KS-Z1E | KS-HD-Z1E | FTMS ²
+KingSmith | R3 (KS-R3Q) | KS-AP-RQ3 | FTMS ³
 Sperax | RM-01| SPERAX_RM-01_****** | FTMS
 Sperax | P3 Max | SPERAX_P3MAX | Sperax
 
-¹ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; since [walkingpad-controller 0.6.0](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.6.0), `stop()` pauses first.
+¹ Also tested through an ESPHome Bluetooth proxy (active mode); the proxy needs `bluetooth_proxy: active: true` to make connections.
+
+² Reported working by the community ([walkingpad-controller#7](https://github.com/mcdax/walkingpad-controller/issues/7)).
+
+³ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; since [walkingpad-controller 0.6.0](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.6.0), `stop()` pauses first.
 
 If you have a KingSmith device that uses FTMS (or doesn't work with the legacy protocol), please [open an issue](https://github.com/mcdax/hass-walkingpad/issues) with your device model and BLE name.
 
