@@ -8,6 +8,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-22
+
+### Fixed
+
+- **The treadmill's own remote control works while Home Assistant is
+  connected through an ESPHome Bluetooth proxy.** The proxies keep the link
+  at a ~10 ms connection interval, at which the KS-Z1D ignores its remote;
+  `walkingpad-controller` 0.6.2 asks the proxy for 30-50 ms after
+  connecting. Requires a proxy firmware that supports setting connection
+  parameters (current ESPHome); older firmware ignores the request.
+
 ## [0.6.1] - 2026-11-22
 
 Tested on a KingSmith KS-Z1D through an ESPHome Bluetooth proxy.
