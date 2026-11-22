@@ -17,6 +17,7 @@ from enum import Enum, unique
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
+from homeassistant.exceptions import HomeAssistantError
 
 import walkingpad_controller.controller as _wpc_controller
 from walkingpad_controller import (
@@ -43,6 +44,10 @@ _LOGGER = logging.getLogger(__name__)
 # set_speed) reset the timer so the BLE link is held for the whole burst,
 # avoiding connect/disconnect churn between them.
 IDLE_DISCONNECT_TIMEOUT_SECONDS = 5.0
+
+# How long a command waits for a connect that is already in flight (e.g. the
+# reconnect loop) before trying itself. Covers the library's connect retries.
+CONNECT_WAIT_SECONDS = 45.0
 
 # Pause between switching mode and starting the belt in start_belt_in_mode().
 MODE_SWITCH_SETTLE_SECONDS = 1.5
@@ -87,6 +92,9 @@ class WalkingPad:
         # when stay_connected is False. Each new command cancels the
         # current timer and (post-command) schedules a fresh one.
         self._disconnect_timer_task: asyncio.Task[None] | None = None
+        # Set whenever no connect() is in flight; commands wait on it.
+        self._connect_done = asyncio.Event()
+        self._connect_done.set()
 
         # Register library callbacks
         self._controller.register_status_callback(self._on_library_status_update)
@@ -246,6 +254,11 @@ class WalkingPad:
             await asyncio.sleep(IDLE_DISCONNECT_TIMEOUT_SECONDS)
         except asyncio.CancelledError:
             return
+        # From here on this is a BLE operation, not a pending timer: a command
+        # arriving now must wait for it (BLE lock) instead of cancelling it
+        # mid-disconnect.
+        if self._disconnect_timer_task is asyncio.current_task():
+            self._disconnect_timer_task = None
         # Re-check under the BLE lock so we don't race with a command
         # that started during the sleep.
         async with self._ble_lock:
@@ -275,6 +288,7 @@ class WalkingPad:
             return
 
         self._connection_status = WalkingPadConnectionStatus.CONNECTING
+        self._connect_done.clear()
 
         try:
             await self._controller.connect()
@@ -295,6 +309,7 @@ class WalkingPad:
             # forever, jamming all subsequent reconnects.
             if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+            self._connect_done.set()
 
     async def disconnect(self) -> None:
         """Disconnect the device."""
@@ -330,31 +345,49 @@ class WalkingPad:
                 _LOGGER.warning("Bluetooth error during state update: %s", err)
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
-    async def _run_command(self, command: Callable[[], Awaitable[object]]) -> None:
+    async def _run_command(
+        self, command: Callable[[], Awaitable[object]], *, required: bool = False
+    ) -> None:
         """Run one library command under the BLE lock; see `_run_command_unlocked`."""
         async with self._ble_lock:
-            await self._run_command_unlocked(command)
+            await self._run_command_unlocked(command, required=required)
 
     async def _run_command_unlocked(
-        self, command: Callable[[], Awaitable[object]]
+        self, command: Callable[[], Awaitable[object]], *, required: bool = False
     ) -> None:
         """Connect if needed, run ``command()``, then schedule the idle disconnect.
 
-        Caller must hold _ble_lock. Only connects from NOT_CONNECTED (not
-        while a reconnect is CONNECTING); a BLE error marks the link down.
+        Caller must hold _ble_lock. A connect already in flight (e.g. the
+        reconnect loop) is awaited instead of dropping the command; a BLE
+        error marks the link down. With ``required`` (stop/pause), not
+        reaching the device, a BLE error or a command the library reports as
+        failed raises HomeAssistantError, so the user sees it.
         """
+        if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
+            try:
+                async with asyncio.timeout(CONNECT_WAIT_SECONDS):
+                    await self._connect_done.wait()
+            except TimeoutError:
+                _LOGGER.warning("Connect still in progress after %ss", CONNECT_WAIT_SECONDS)
         if self._connection_status == WalkingPadConnectionStatus.NOT_CONNECTED:
             await self.connect()
         if not self.connected:
+            if required:
+                raise HomeAssistantError("WalkingPad is not reachable")
             return
 
         try:
-            await command()
+            result = await command()
         except BleakError as err:
             _LOGGER.warning("Bluetooth error: %s", err)
             self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+            if required:
+                raise HomeAssistantError(f"WalkingPad Bluetooth error: {err}") from err
+            return
         finally:
             await self.disconnect_after_command()
+        if required and result is False:
+            raise HomeAssistantError("WalkingPad did not confirm the command")
 
     async def start_belt(self) -> None:
         """Start the belt."""
@@ -372,7 +405,7 @@ class WalkingPad:
         the phone-app behaviour where the user's stop button preserves
         time/distance/steps across the pause/resume cycle.
         """
-        await self._run_command(lambda: self._controller.stop())
+        await self._run_command(lambda: self._controller.stop(), required=True)
 
     async def pause_belt(self) -> None:
         """Pause the belt — session stays live, counters preserved.
@@ -382,7 +415,7 @@ class WalkingPad:
         A subsequent ``start_belt()`` resumes the session and continues
         accumulating time/distance/steps from where it left off.
         """
-        await self._run_command(lambda: self._controller.pause())
+        await self._run_command(lambda: self._controller.pause(), required=True)
 
     async def set_speed(self, speed: float) -> None:
         """Set the belt speed in km/h."""

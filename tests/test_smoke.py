@@ -141,6 +141,8 @@ def make_pad(status, fail, trace):
     pad._ble_lock = asyncio.Lock()
     pad._stay_connected = True
     pad._disconnect_timer_task = None
+    pad._connect_done = asyncio.Event()
+    pad._connect_done.set()
 
     async def connect():
         trace.append("connect")
@@ -168,11 +170,67 @@ def test_command_connects_runs_and_schedules_idle_disconnect(fail):
     assert pad._connection_status == expected
 
 
-def test_command_does_not_connect_while_a_reconnect_is_running():
+def test_stop_during_a_reconnect_runs_once_the_connect_finishes():
+    # Was: silently dropped while the reconnect loop was CONNECTING.
     trace: list[str] = []
     pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTING, False, trace)
-    asyncio.run(pad.stop_belt())
-    assert trace == []
+
+    async def run():
+        pad._connect_done.clear()
+
+        async def finish_reconnect():
+            await asyncio.sleep(0.01)
+            pad._connection_status = walkingpad.WalkingPadConnectionStatus.CONNECTED
+            pad._connect_done.set()
+
+        asyncio.get_running_loop().create_task(finish_reconnect())
+        await pad.stop_belt()
+
+    asyncio.run(run())
+    assert trace == ["stop", "disconnect_after_command"]
+
+
+def test_stop_reports_an_unreachable_device(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+
+    async def connect_fails():
+        trace.append("connect")
+
+    pad.connect = connect_fails
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    assert trace == ["connect"]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_stop_reports_a_failed_or_rejected_command(fail):
+    from homeassistant.exceptions import HomeAssistantError
+
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, fail, trace)
+    if not fail:
+        async def rejected():
+            trace.append("stop")
+            return False
+
+        pad._controller.stop = rejected
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(pad.stop_belt())
+    assert "disconnect_after_command" in trace
+
+
+def test_speed_change_stays_quiet_when_unreachable():
+    trace: list[str] = []
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, trace)
+
+    async def connect_fails():
+        trace.append("connect")
+
+    pad.connect = connect_fails
+    asyncio.run(pad.set_speed(2.0))  # no exception, unchanged behaviour
 
 
 def test_belt_controls_stay_available_while_disconnected(monkeypatch):
