@@ -146,17 +146,17 @@ Protocol detection is name-based first (with the prefixes above), and falls back
 
 Brand | Device | BLE Name | Protocol
 -- | -- | -- | --
-KingSmith | KS-Z1D | KS-HD-Z1D | FTMS ²
-KingSmith | KS-Z1E | KS-HD-Z1E | FTMS ³
-KingSmith | R3 (KS-R3Q) | KS-AP-RQ3 | FTMS ¹
+KingSmith | KS-Z1D | KS-HD-Z1D | FTMS ¹
+KingSmith | KS-Z1E | KS-HD-Z1E | FTMS ²
+KingSmith | R3 (KS-R3Q) | KS-AP-RQ3 | FTMS ³
 Sperax | RM-01| SPERAX_RM-01_****** | FTMS
 Sperax | P3 Max | SPERAX_P3MAX | Sperax
 
-² Also tested through an ESPHome Bluetooth proxy (active mode); the proxy needs `bluetooth_proxy: active: true` to make connections.
+¹ Also tested through an ESPHome Bluetooth proxy (active mode); the proxy needs `bluetooth_proxy: active: true` to make connections.
 
-³ Reported working by the community ([walkingpad-controller#7](https://github.com/mcdax/walkingpad-controller/issues/7)).
+² Reported working by the community ([walkingpad-controller#7](https://github.com/mcdax/walkingpad-controller/issues/7)).
 
-¹ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; since [walkingpad-controller 0.6.0](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.6.0), `stop()` pauses first.
+³ Tested with `walkingpad-controller` directly (connect, start, speed, pause, stop). The R3 rejects FTMS STOP while the belt is moving; since [walkingpad-controller 0.6.0](https://github.com/mcdax/walkingpad-controller/releases/tag/v0.6.0), `stop()` pauses first.
 
 If you have a KingSmith device that uses FTMS (or doesn't work with the legacy protocol), please [open an issue](https://github.com/mcdax/hass-walkingpad/issues) with your device model and BLE name.
 
