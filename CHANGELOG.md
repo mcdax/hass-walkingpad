@@ -8,6 +8,42 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-22
+
+Tested on a KingSmith KS-Z1D through an ESPHome Bluetooth proxy.
+
+### Changed
+
+- Requires `walkingpad-controller` 0.6.1: Stop and pause take priority over
+  a pending start or speed change; a start or speed change right after Stop
+  waits until the belt has run down (it was lost on the KS-Z1D); the state
+  is right after a stop from pause and after a pause right after a
+  reconnect; control is requested again after a reset.
+- **Stop button works while disconnected.** With Stay Connected off the link
+  is released 5 s after each command, even while the belt runs; the Stop
+  button was then greyed out. It now connects first, waits for a reconnect
+  already in progress instead of dropping the press, and shows an error if
+  the stop could not be sent or was not confirmed. Pausing via the belt
+  switch reports failures the same way.
+- **Protocol detection by the advertised name.** If the name entered at
+  setup doesn't match a known prefix, the integration remembers the name
+  the treadmill advertises once Home Assistant has seen it, and always
+  connects through the BLE device from the latest advertisement.
+- Learning that name, or any other entry-data update, no longer reloads the
+  belt switch, speed slider and buttons; only real option changes do.
+
+### Fixed
+
+- Deprecated `device_registry.async_get_device` (stops working in HA
+  2027.8) replaced by the entry-scoped lookup, with a fallback for older
+  cores.
+- Unloading the entry no longer restarts the reconnect loop, accepts new
+  commands, or leaves a connect that was in flight connected.
+- A stale idle-disconnect timer no longer cuts the link right after a new
+  command.
+- README: the belt switch pauses (Stop ends the session); removed the claim
+  of an automatic speed recovery after a reconnect.
+
 ## [0.6.1b1] - 2026-11-21 (beta)
 
 ### Changed
