@@ -53,6 +53,9 @@ def test_failed_unload_skips_the_setup():
     entries.unload_ok = False
     asyncio.run(king_smith.async_update_options(hass, entry))
     assert entries.set_up == []
+    entries.unload_ok = True  # the next update retries the reload
+    asyncio.run(king_smith.async_update_options(hass, entry))
+    assert len(entries.set_up) == 1
 
 
 class NewRegistry:

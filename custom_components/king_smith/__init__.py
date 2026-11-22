@@ -55,7 +55,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     options = dict(entry.options)
     if options == integration_data["options"]:
         return
-    integration_data["options"] = options
     reloadable_platforms = [Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
     if not await hass.config_entries.async_unload_platforms(
         entry, reloadable_platforms
@@ -63,6 +62,8 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.warning("Could not unload the control platforms; not reloading them")
         return
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
+    # Only now: after a failed unload the next options update retries.
+    integration_data["options"] = options
 
 
 def _advertised_name(hass: HomeAssistant, address: str) -> str | None:
