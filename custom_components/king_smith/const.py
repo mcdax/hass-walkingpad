@@ -14,6 +14,8 @@ CONF_REMOTE_CONTROL: Final = "remote_control"
 CONF_REMOTE_CONTROL_ENABLED: Final = "remote_control_enabled"
 CONF_MAC: Final = "mac"
 CONF_NAME: Final = "name"
+# Name the treadmill advertises; the protocol is detected from it.
+CONF_BLE_NAME: Final = "ble_name"
 CONF_PREFERRED_MODE: Final = "preferred_mode"
 
 

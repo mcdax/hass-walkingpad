@@ -64,9 +64,19 @@ class WalkingPad:
     WalkingPadStatus mapping) on top of the library's unified controller.
     """
 
-    def __init__(self, name: str, ble_device: BLEDevice) -> None:
-        """Create a WalkingPad object."""
-        self._controller = WalkingPadController(ble_device=ble_device, name=name)
+    def __init__(
+        self, name: str, ble_device: BLEDevice, ble_name: str | None = None
+    ) -> None:
+        """Create a WalkingPad object.
+
+        ``name`` is the user-chosen display name. ``ble_name`` is the name
+        the treadmill advertises; the controller falls back to it for
+        protocol detection when the BLEDevice arrives without a name.
+        """
+        self._name = name
+        self._controller = WalkingPadController(
+            ble_device=ble_device, name=ble_name or name
+        )
         self._callbacks: list[Callable[[WalkingPadStatus], None]] = []
         self._disconnect_callbacks: list[Callable[[], None]] = []
         self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
@@ -168,7 +178,22 @@ class WalkingPad:
     @property
     def name(self) -> str:
         """Name."""
-        return self._controller.name
+        return self._name
+
+    def set_ble_name(self, ble_name: str) -> None:
+        """Use a newly learned advertised name for the next protocol detection."""
+        set_name = getattr(self._controller, "set_name", None)  # library >= 0.6.1
+        if set_name is not None:
+            set_name(ble_name)
+
+    def update_ble_device(self, ble_device: BLEDevice) -> None:
+        """Use a newer BLEDevice for the next connect.
+
+        Fresh advertisements carry the device's own name (the config entry
+        name is user-chosen and may not match a protocol prefix) and point
+        at the proxy that currently hears the treadmill best.
+        """
+        self._controller.update_ble_device(ble_device)
 
     @property
     def protocol(self):

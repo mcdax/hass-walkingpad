@@ -8,11 +8,11 @@ from typing import TypedDict
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_MAC, CONF_NAME, DOMAIN
+from .const import CONF_BLE_NAME, CONF_MAC, CONF_NAME, DOMAIN
 from .coordinator import WalkingPadCoordinator
 from .walkingpad import WalkingPad
 
@@ -30,6 +30,8 @@ class WalkingPadIntegrationData(TypedDict):
 
     device: WalkingPad
     coordinator: WalkingPadCoordinator
+    # Options the control platforms were last set up with.
+    options: dict
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,9 +45,52 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     is in this list so the Stop button appears / disappears alongside
     the belt switch when the user toggles remote-control.
     """
+    integration_data: WalkingPadIntegrationData | None = hass.data[DOMAIN].get(
+        entry.entry_id
+    )
+    if integration_data is None:
+        return
+    # The listener also fires for entry.data updates (the learned BLE
+    # name); reloading the controls then would interrupt a running walk.
+    options = dict(entry.options)
+    if options == integration_data["options"]:
+        return
     reloadable_platforms = [Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
-    await hass.config_entries.async_unload_platforms(entry, reloadable_platforms)
+    if not await hass.config_entries.async_unload_platforms(
+        entry, reloadable_platforms
+    ):
+        _LOGGER.warning("Could not unload the control platforms; not reloading them")
+        return
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
+    # Only now: after a failed unload the next options update retries.
+    integration_data["options"] = options
+
+
+def _advertised_name(hass: HomeAssistant, address: str) -> str | None:
+    """Return the name the treadmill advertises, if HA has seen it.
+
+    HA merges the scan response into its service info, so this can know
+    the name while the BLEDevice handed out still has none.
+    """
+    info = bluetooth.async_last_service_info(hass, address, connectable=True)
+    if info is None or not info.name or info.name == info.address:
+        return None
+    return info.name
+
+
+@callback
+def _async_store_ble_name(
+    hass: HomeAssistant, entry: ConfigEntry, ble_name: str | None
+) -> None:
+    """Remember the advertised name for protocol detection.
+
+    After a restart the proxy often hands over a nameless BLEDevice, and the
+    entry name is free text that need not match a protocol prefix.
+    """
+    if ble_name and ble_name != entry.data.get(CONF_BLE_NAME):
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_BLE_NAME: ble_name}
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -70,14 +115,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     name = entry.data.get(CONF_NAME) or DOMAIN
     _async_migrate_entity_ids(hass, entry)
-    walkingpad_device = WalkingPad(name, ble_device)
-    coordinator = WalkingPadCoordinator(hass, walkingpad_device)
+    _async_store_ble_name(hass, entry, _advertised_name(hass, address))
+    walkingpad_device = WalkingPad(name, ble_device, entry.data.get(CONF_BLE_NAME))
+    coordinator = WalkingPadCoordinator(hass, walkingpad_device, entry.entry_id)
 
     integration_data: WalkingPadIntegrationData = {
         "device": walkingpad_device,
         "coordinator": coordinator,
+        "options": dict(entry.options),
     }
     hass.data[DOMAIN][entry.entry_id] = integration_data
+
+    @callback
+    def _async_update_ble_device(
+        service_info: bluetooth.BluetoothServiceInfoBleak,
+        change: bluetooth.BluetoothChange,
+    ) -> None:
+        if coordinator.shutting_down:
+            return
+        walkingpad_device.update_ble_device(service_info.device)
+        ble_name = _advertised_name(hass, address)
+        if ble_name and ble_name != entry.data.get(CONF_BLE_NAME):
+            walkingpad_device.set_ble_name(ble_name)
+        _async_store_ble_name(hass, entry, ble_name)
+
+    entry.async_on_unload(
+        bluetooth.async_register_callback(
+            hass,
+            _async_update_ble_device,
+            bluetooth.BluetoothCallbackMatcher(address=address, connectable=True),
+            bluetooth.BluetoothScanningMode.PASSIVE,
+        )
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

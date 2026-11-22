@@ -32,10 +32,33 @@ STATUS_UPDATE_TIMEOUT_SECONDS = 60
 RECONNECT_INITIAL_DELAYS_SECONDS = (0, 2, 5, 10, 15)
 RECONNECT_SUSTAINED_DELAY_SECONDS = 30
 
+
+def _device_by_identifier(
+    device_registry: dr.DeviceRegistry,
+    identifier: tuple[str, str],
+    config_entry_id: str | None,
+) -> dr.DeviceEntry | None:
+    """Look up this entry's device by identifier.
+
+    Newer cores deprecate ``async_get_device`` (identifiers are only unique
+    within a config entry) in favour of a lookup scoped to the entry; older
+    cores only have the unscoped call.
+    """
+    lookup = getattr(device_registry, "async_get_device_by_identifier", None)
+    if lookup is not None and config_entry_id is not None:
+        return lookup(identifier, config_entry_id)
+    return device_registry.async_get_device(identifiers={identifier})
+
+
 class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     """WalkingPad coordinator."""
 
-    def __init__(self, hass: HomeAssistant, walkingpad_device: WalkingPad) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        walkingpad_device: WalkingPad,
+        entry_id: str | None = None,
+    ) -> None:
         """Initialise WalkingPad coordinator."""
         super().__init__(
             hass,
@@ -45,6 +68,10 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             update_interval=STATUS_UPDATE_INTERVAL,
         )
         self.walkingpad_device = walkingpad_device
+        # Owning config entry, for the entry-scoped device-registry lookup.
+        self._entry_id = entry_id
+        # Set by async_shutdown(); no reconnects after that.
+        self._shutting_down = False
         self.walkingpad_device.register_status_callback(self._async_handle_update)
         self.walkingpad_device.register_disconnect_callback(self._async_handle_disconnect)
         # Single reconnect task — coordinated by _async_handle_disconnect so we
@@ -89,6 +116,11 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             return self.data
 
     @property
+    def shutting_down(self) -> bool:
+        """True once the entry is being unloaded."""
+        return self._shutting_down
+
+    @property
     def connected(self) -> bool:
         """Get the device connection status."""
         return self.walkingpad_device.connected
@@ -116,8 +148,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if not firmware_version:
             return
         device_registry = dr.async_get(self.hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, self.walkingpad_device.mac)}
+        device = _device_by_identifier(
+            device_registry, (DOMAIN, self.walkingpad_device.mac), self._entry_id
         )
         if device is None:
             return
@@ -150,7 +182,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:
                 return
-            if not self.walkingpad_device.stay_connected:
+            if self._shutting_down or not self.walkingpad_device.stay_connected:
                 return
             if self.walkingpad_device.connected:
                 return
@@ -165,7 +197,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     @callback
     def _ensure_reconnect_running(self) -> None:
         """Spawn the reconnect loop if not already in flight."""
-        if not self.walkingpad_device.stay_connected:
+        if self._shutting_down or not self.walkingpad_device.stay_connected:
             return
         if self._reconnect_task is not None and not self._reconnect_task.done():
             return
@@ -217,6 +249,9 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         task and BLE callbacks alive, so a new coordinator's events fire
         twice (or more, after multiple reloads).
         """
+        # Before disconnecting: the disconnect callback would otherwise
+        # start a new reconnect loop for the unloaded entry.
+        self._shutting_down = True
         await self._cancel_reconnect_task()
         await super().async_shutdown()
         await self._async_disconnect()
