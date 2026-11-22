@@ -30,6 +30,8 @@ class WalkingPadIntegrationData(TypedDict):
 
     device: WalkingPad
     coordinator: WalkingPadCoordinator
+    # Options the control platforms were last set up with.
+    options: dict
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,8 +45,23 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     is in this list so the Stop button appears / disappears alongside
     the belt switch when the user toggles remote-control.
     """
+    integration_data: WalkingPadIntegrationData | None = hass.data[DOMAIN].get(
+        entry.entry_id
+    )
+    if integration_data is None:
+        return
+    # The listener also fires for entry.data updates (the learned BLE
+    # name); reloading the controls then would interrupt a running walk.
+    options = dict(entry.options)
+    if options == integration_data["options"]:
+        return
+    integration_data["options"] = options
     reloadable_platforms = [Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
-    await hass.config_entries.async_unload_platforms(entry, reloadable_platforms)
+    if not await hass.config_entries.async_unload_platforms(
+        entry, reloadable_platforms
+    ):
+        _LOGGER.warning("Could not unload the control platforms; not reloading them")
+        return
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
 
 
@@ -99,11 +116,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_migrate_entity_ids(hass, entry)
     _async_store_ble_name(hass, entry, _advertised_name(hass, address))
     walkingpad_device = WalkingPad(name, ble_device, entry.data.get(CONF_BLE_NAME))
-    coordinator = WalkingPadCoordinator(hass, walkingpad_device)
+    coordinator = WalkingPadCoordinator(hass, walkingpad_device, entry.entry_id)
 
     integration_data: WalkingPadIntegrationData = {
         "device": walkingpad_device,
         "coordinator": coordinator,
+        "options": dict(entry.options),
     }
     hass.data[DOMAIN][entry.entry_id] = integration_data
 
@@ -112,8 +130,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         service_info: bluetooth.BluetoothServiceInfoBleak,
         change: bluetooth.BluetoothChange,
     ) -> None:
+        if coordinator.shutting_down:
+            return
         walkingpad_device.update_ble_device(service_info.device)
-        _async_store_ble_name(hass, entry, _advertised_name(hass, address))
+        ble_name = _advertised_name(hass, address)
+        if ble_name and ble_name != entry.data.get(CONF_BLE_NAME):
+            walkingpad_device.set_ble_name(ble_name)
+        _async_store_ble_name(hass, entry, ble_name)
 
     entry.async_on_unload(
         bluetooth.async_register_callback(

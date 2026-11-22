@@ -180,6 +180,12 @@ class WalkingPad:
         """Name."""
         return self._name
 
+    def set_ble_name(self, ble_name: str) -> None:
+        """Use a newly learned advertised name for the next protocol detection."""
+        set_name = getattr(self._controller, "set_name", None)  # library >= 0.6.1
+        if set_name is not None:
+            set_name(ble_name)
+
     def update_ble_device(self, ble_device: BLEDevice) -> None:
         """Use a newer BLEDevice for the next connect.
 

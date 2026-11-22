@@ -53,7 +53,12 @@ def _device_by_identifier(
 class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     """WalkingPad coordinator."""
 
-    def __init__(self, hass: HomeAssistant, walkingpad_device: WalkingPad) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        walkingpad_device: WalkingPad,
+        entry_id: str | None = None,
+    ) -> None:
         """Initialise WalkingPad coordinator."""
         super().__init__(
             hass,
@@ -63,6 +68,10 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             update_interval=STATUS_UPDATE_INTERVAL,
         )
         self.walkingpad_device = walkingpad_device
+        # Owning config entry, for the entry-scoped device-registry lookup.
+        self._entry_id = entry_id
+        # Set by async_shutdown(); no reconnects after that.
+        self._shutting_down = False
         self.walkingpad_device.register_status_callback(self._async_handle_update)
         self.walkingpad_device.register_disconnect_callback(self._async_handle_disconnect)
         # Single reconnect task — coordinated by _async_handle_disconnect so we
@@ -107,6 +116,11 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             return self.data
 
     @property
+    def shutting_down(self) -> bool:
+        """True once the entry is being unloaded."""
+        return self._shutting_down
+
+    @property
     def connected(self) -> bool:
         """Get the device connection status."""
         return self.walkingpad_device.connected
@@ -134,12 +148,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if not firmware_version:
             return
         device_registry = dr.async_get(self.hass)
-        # DataUpdateCoordinator only knows its entry on newer cores.
-        config_entry = getattr(self, "config_entry", None)
         device = _device_by_identifier(
-            device_registry,
-            (DOMAIN, self.walkingpad_device.mac),
-            config_entry.entry_id if config_entry is not None else None,
+            device_registry, (DOMAIN, self.walkingpad_device.mac), self._entry_id
         )
         if device is None:
             return
@@ -172,7 +182,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:
                 return
-            if not self.walkingpad_device.stay_connected:
+            if self._shutting_down or not self.walkingpad_device.stay_connected:
                 return
             if self.walkingpad_device.connected:
                 return
@@ -187,7 +197,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     @callback
     def _ensure_reconnect_running(self) -> None:
         """Spawn the reconnect loop if not already in flight."""
-        if not self.walkingpad_device.stay_connected:
+        if self._shutting_down or not self.walkingpad_device.stay_connected:
             return
         if self._reconnect_task is not None and not self._reconnect_task.done():
             return
@@ -239,6 +249,9 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         task and BLE callbacks alive, so a new coordinator's events fire
         twice (or more, after multiple reloads).
         """
+        # Before disconnecting: the disconnect callback would otherwise
+        # start a new reconnect loop for the unloaded entry.
+        self._shutting_down = True
         await self._cancel_reconnect_task()
         await super().async_shutdown()
         await self._async_disconnect()
