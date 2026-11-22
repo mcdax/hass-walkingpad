@@ -173,3 +173,18 @@ def test_command_does_not_connect_while_a_reconnect_is_running():
     pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTING, False, trace)
     asyncio.run(pad.stop_belt())
     assert trace == []
+
+
+def test_belt_controls_stay_available_while_disconnected(monkeypatch):
+    # With Stay-connected off the link drops while the belt may still run;
+    # Stop must stay usable then, like the belt switch and the slider.
+    entities, _ = setup_entities(
+        monkeypatch,
+        const.ProtocolType.FTMS,
+        {"remote_control_enabled": True, "preferred_mode": "manual"},
+    )
+    by_key = {e.unique_id.split("-", 1)[1]: e for e in entities}
+    for entity in by_key.values():
+        entity.coordinator.connected = False
+    for key in ("walkingpad_stop_session", "walkingpad_belt_switch", "walkingpad_speed"):
+        assert by_key[key].available, key
