@@ -135,6 +135,7 @@ Newer KingSmith treadmills (BLE names such as `KS-HD-*`, `KS-AP-*`, `KS-MC21-*`)
 - Cold start requires the FTMS Start/Resume command before speed can be set; the speed is only sent once the belt moves
 - After Stop, a new start or speed change waits until the belt has run down (otherwise the KS-Z1D ignores it)
 - After a BLE connection drop the integration reconnects automatically while Stay Connected is on; commands are not replayed
+- The treadmill's own remote control keeps working while Home Assistant is connected through an ESPHome Bluetooth proxy: the integration asks the proxy for a 30–50 ms connection interval (at the proxy default of ~10 ms the KS-Z1D ignores its remote). Needs current ESPHome firmware on the proxy.
 
 ### Sperax (wi-linktech WLT6200)
 
