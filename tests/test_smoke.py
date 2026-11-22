@@ -290,3 +290,48 @@ def test_stale_idle_timer_does_not_cut_a_fresh_command(monkeypatch):
 
     asyncio.run(run())
     assert trace == ["disconnect"]
+
+
+def test_close_during_connect_leaves_no_link():
+    events: list[str] = []
+    gate = None
+
+    class Controller:
+        protocol = const.ProtocolType.FTMS
+
+        async def connect(self):
+            events.append("connect")
+            await gate.wait()
+
+        async def disconnect(self):
+            events.append("disconnect")
+
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED, False, [])
+    del pad.connect  # use the real WalkingPad.connect
+    pad._controller = Controller()
+
+    async def run():
+        nonlocal gate
+        gate = asyncio.Event()
+        task = asyncio.create_task(pad.connect())
+        await asyncio.sleep(0)
+        pad.close()
+        gate.set()
+        await task
+
+    asyncio.run(run())
+    assert events == ["connect", "disconnect"]
+    assert not pad.connected
+
+
+def test_no_idle_timer_after_close():
+    pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, False, [])
+    del pad.disconnect_after_command  # the real one
+    pad._stay_connected = False
+    pad.close()
+
+    async def run():
+        await pad.disconnect_after_command()
+
+    asyncio.run(run())
+    assert pad._disconnect_timer_task is None

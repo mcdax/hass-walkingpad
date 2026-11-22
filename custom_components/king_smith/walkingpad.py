@@ -228,7 +228,7 @@ class WalkingPad:
         the last action), we disconnect — unless stay_connected has
         been turned back on or another action arrived first.
         """
-        if self._stay_connected:
+        if self._stay_connected or self._closed:
             return
         if not self.connected:
             return
@@ -308,6 +308,11 @@ class WalkingPad:
 
         try:
             await self._controller.connect()
+            if self._closed:
+                # Unloaded while connecting: don't leave a link behind.
+                await self._controller.disconnect()
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+                return
             self._connection_status = WalkingPadConnectionStatus.CONNECTED
             _LOGGER.info(
                 "Connected to WalkingPad via %s protocol",
