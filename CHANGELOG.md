@@ -8,6 +8,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-22
+
+First stable release. Requires `walkingpad-controller` 1.0.0.
+
+### Highlights
+
+- **The treadmill's remote control works while Home Assistant is
+  connected through an ESPHome Bluetooth proxy** (since 0.6.2).
+- **Stop and pause take priority** over a pending start or speed change.
+
+### Fixed
+
+- A paused session is shown as paused right after (re)connecting, not as
+  stopped.
+
 ## [0.6.2] - 2026-11-22
 
 ### Fixed
