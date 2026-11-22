@@ -8,7 +8,7 @@ from typing import TypedDict
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
@@ -78,6 +78,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
     hass.data[DOMAIN][entry.entry_id] = integration_data
+
+    @callback
+    def _async_update_ble_device(
+        service_info: bluetooth.BluetoothServiceInfoBleak,
+        change: bluetooth.BluetoothChange,
+    ) -> None:
+        walkingpad_device.update_ble_device(service_info.device)
+
+    entry.async_on_unload(
+        bluetooth.async_register_callback(
+            hass,
+            _async_update_ble_device,
+            bluetooth.BluetoothCallbackMatcher(address=address, connectable=True),
+            bluetooth.BluetoothScanningMode.PASSIVE,
+        )
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

@@ -170,6 +170,15 @@ class WalkingPad:
         """Name."""
         return self._controller.name
 
+    def update_ble_device(self, ble_device: BLEDevice) -> None:
+        """Use a newer BLEDevice for the next connect.
+
+        Fresh advertisements carry the device's own name (the config entry
+        name is user-chosen and may not match a protocol prefix) and point
+        at the proxy that currently hears the treadmill best.
+        """
+        self._controller.update_ble_device(ble_device)
+
     @property
     def protocol(self):
         """The detected protocol type."""

@@ -32,6 +32,21 @@ STATUS_UPDATE_TIMEOUT_SECONDS = 60
 RECONNECT_INITIAL_DELAYS_SECONDS = (0, 2, 5, 10, 15)
 RECONNECT_SUSTAINED_DELAY_SECONDS = 30
 
+
+def _device_by_identifier(
+    device_registry: dr.DeviceRegistry, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    """Look up a device by identifier.
+
+    Newer cores deprecate ``async_get_device`` (identifiers are no longer
+    unique across config entries); older cores only have that call.
+    """
+    lookup = getattr(device_registry, "async_get_device_by_identifier", None)
+    if lookup is not None:
+        return lookup(identifier)
+    return device_registry.async_get_device(identifiers={identifier})
+
+
 class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     """WalkingPad coordinator."""
 
@@ -116,8 +131,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if not firmware_version:
             return
         device_registry = dr.async_get(self.hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, self.walkingpad_device.mac)}
+        device = _device_by_identifier(
+            device_registry, (DOMAIN, self.walkingpad_device.mac)
         )
         if device is None:
             return
