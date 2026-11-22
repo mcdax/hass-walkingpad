@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_MAC, CONF_NAME, DOMAIN
+from .const import CONF_BLE_NAME, CONF_MAC, CONF_NAME, DOMAIN
 from .coordinator import WalkingPadCoordinator
 from .walkingpad import WalkingPad
 
@@ -48,6 +48,33 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
 
 
+def _advertised_name(hass: HomeAssistant, address: str) -> str | None:
+    """Return the name the treadmill advertises, if HA has seen it.
+
+    HA merges the scan response into its service info, so this can know
+    the name while the BLEDevice handed out still has none.
+    """
+    info = bluetooth.async_last_service_info(hass, address, connectable=True)
+    if info is None or not info.name or info.name == info.address:
+        return None
+    return info.name
+
+
+@callback
+def _async_store_ble_name(
+    hass: HomeAssistant, entry: ConfigEntry, ble_name: str | None
+) -> None:
+    """Remember the advertised name for protocol detection.
+
+    After a restart the proxy often hands over a nameless BLEDevice, and the
+    entry name is free text that need not match a protocol prefix.
+    """
+    if ble_name and ble_name != entry.data.get(CONF_BLE_NAME):
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_BLE_NAME: ble_name}
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up walkingpad from a config entry."""
 
@@ -70,7 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     name = entry.data.get(CONF_NAME) or DOMAIN
     _async_migrate_entity_ids(hass, entry)
-    walkingpad_device = WalkingPad(name, ble_device)
+    _async_store_ble_name(hass, entry, _advertised_name(hass, address))
+    walkingpad_device = WalkingPad(name, ble_device, entry.data.get(CONF_BLE_NAME))
     coordinator = WalkingPadCoordinator(hass, walkingpad_device)
 
     integration_data: WalkingPadIntegrationData = {
@@ -85,6 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         change: bluetooth.BluetoothChange,
     ) -> None:
         walkingpad_device.update_ble_device(service_info.device)
+        _async_store_ble_name(hass, entry, _advertised_name(hass, address))
 
     entry.async_on_unload(
         bluetooth.async_register_callback(

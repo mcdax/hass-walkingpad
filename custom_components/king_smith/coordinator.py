@@ -34,16 +34,19 @@ RECONNECT_SUSTAINED_DELAY_SECONDS = 30
 
 
 def _device_by_identifier(
-    device_registry: dr.DeviceRegistry, identifier: tuple[str, str]
+    device_registry: dr.DeviceRegistry,
+    identifier: tuple[str, str],
+    config_entry_id: str | None,
 ) -> dr.DeviceEntry | None:
-    """Look up a device by identifier.
+    """Look up this entry's device by identifier.
 
-    Newer cores deprecate ``async_get_device`` (identifiers are no longer
-    unique across config entries); older cores only have that call.
+    Newer cores deprecate ``async_get_device`` (identifiers are only unique
+    within a config entry) in favour of a lookup scoped to the entry; older
+    cores only have the unscoped call.
     """
     lookup = getattr(device_registry, "async_get_device_by_identifier", None)
-    if lookup is not None:
-        return lookup(identifier)
+    if lookup is not None and config_entry_id is not None:
+        return lookup(identifier, config_entry_id)
     return device_registry.async_get_device(identifiers={identifier})
 
 
@@ -131,8 +134,12 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         if not firmware_version:
             return
         device_registry = dr.async_get(self.hass)
+        # DataUpdateCoordinator only knows its entry on newer cores.
+        config_entry = getattr(self, "config_entry", None)
         device = _device_by_identifier(
-            device_registry, (DOMAIN, self.walkingpad_device.mac)
+            device_registry,
+            (DOMAIN, self.walkingpad_device.mac),
+            config_entry.entry_id if config_entry is not None else None,
         )
         if device is None:
             return
