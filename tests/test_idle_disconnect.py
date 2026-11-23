@@ -21,6 +21,8 @@ def make_coordinator(minutes=5, idle_for=301, belt=const.BeltState.STOPPED):
     coord._shutting_down = False
     coord._reconnect_task = None
     coord._idle_released = False
+    coord._idle_check_running = False
+    coord._firmware_pushed = True
     coord._idle_disconnect_minutes = minutes
     coord._last_active_at = time.monotonic() - idle_for
     coord.async_update_listeners = lambda: None
@@ -30,6 +32,7 @@ def make_coordinator(minutes=5, idle_for=301, belt=const.BeltState.STOPPED):
         coro.close()
         spawned.append(kwargs.get("name"))
 
+    coord.async_set_updated_data = lambda data: setattr(coord, "data", data)
     coord.hass = types.SimpleNamespace(async_create_task=create_task)
     return coord, pad, spawned
 
@@ -106,3 +109,45 @@ def test_drop_right_after_a_command_reconnects():
     pad._connection_status = walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED
     coord._async_handle_disconnect()
     assert spawned == ["walkingpad-reconnect"]
+
+
+def test_status_updates_alone_release_an_idle_link():
+    # Pushed updates postpone the poll, so the check must not depend on it.
+    coord, pad, _ = make_coordinator()
+    tasks = []
+
+    async def run():
+        coord.hass.async_create_task = lambda coro, **kw: tasks.append(
+            asyncio.ensure_future(coro)
+        )
+        coord._async_handle_update(
+            {"belt_state": const.BeltState.STOPPED, "status_timestamp": 1}
+        )
+        await asyncio.gather(*tasks)
+
+    asyncio.run(run())
+    assert len(tasks) == 1 and not pad.connected
+
+
+def test_walk_between_polls_restarts_the_idle_time():
+    coord, pad, spawned = make_coordinator()
+    for ts, belt in ((1, const.BeltState.ACTIVE), (2, const.BeltState.STOPPED)):
+        coord._async_handle_update({"belt_state": belt, "status_timestamp": ts})
+    assert not asyncio.run(coord._async_check_idle())
+    assert pad.connected and spawned == []
+
+
+def test_status_during_the_release_does_not_rearm_reconnects():
+    coord, pad, spawned = make_coordinator()
+
+    async def disconnect():
+        coord._async_handle_update(
+            {"belt_state": const.BeltState.STOPPED, "status_timestamp": 1}
+        )
+        pad._connection_status = walkingpad.WalkingPadConnectionStatus.NOT_CONNECTED
+        coord._async_handle_disconnect()
+
+    pad.disconnect = disconnect
+    assert asyncio.run(coord._async_check_idle())
+    coord._async_handle_disconnect()
+    assert spawned == [] and coord._idle_released

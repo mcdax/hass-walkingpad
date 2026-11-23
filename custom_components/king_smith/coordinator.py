@@ -86,6 +86,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         self._idle_disconnect_minutes: int = DEFAULT_IDLE_DISCONNECT_MINUTES
         self._last_active_at: float = time.monotonic()
         self._idle_released: bool = False
+        self._idle_check_running: bool = False
         # Single reconnect task — coordinated by _async_handle_disconnect so we
         # don't spawn parallel reconnect attempts that race each other.
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -140,7 +141,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
             self._ensure_reconnect_running()
 
     def _is_idle(self) -> bool:
-        """True once neither the belt nor a command was active for long enough."""
+        """Return True once belt and commands were inactive for long enough."""
         if (
             not self._idle_disconnect_minutes
             or not self.walkingpad_device.stay_connected
@@ -152,24 +153,29 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         return time.monotonic() - last >= self._idle_disconnect_minutes * 60
 
     async def _async_check_idle(self) -> bool:
-        """Release an idle link; returns True if it was released.
+        """Release an idle link and return True if it was released.
 
         The KS-Z1D resets itself and beeps every 10 minutes while it stands
         still with a connection, but not without one. The reconnect loop
         stays off until a command, the Reconnect button or the
         Stay-connected switch brings the link back.
         """
+        if self._idle_check_running or not self.walkingpad_device.connected:
+            # Disconnecting can itself deliver a last status update.
+            return False
         # Connected again (e.g. by a command): a later drop reconnects.
         self._idle_released = False
-        if self.data.get("belt_state") in (BeltState.ACTIVE, BeltState.STARTING):
-            self._last_active_at = time.monotonic()
         if not self._is_idle():
             return False
-        # Before disconnecting, so the disconnect callback doesn't reconnect.
-        self._idle_released = True
-        if not await self.walkingpad_device.disconnect_if(self._is_idle):
-            self._idle_released = False
-            return False
+        self._idle_check_running = True
+        try:
+            # Before disconnecting, so the disconnect callback doesn't reconnect.
+            self._idle_released = True
+            if not await self.walkingpad_device.disconnect_if(self._is_idle):
+                self._idle_released = False
+                return False
+        finally:
+            self._idle_check_running = False
         _LOGGER.info(
             "Belt idle for %s min, released the connection",
             self._idle_disconnect_minutes,
@@ -192,7 +198,15 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         """Receive status updates from the WalkingPad controller."""
         if status.get("status_timestamp", 0) > self.data.get("status_timestamp", 0):
             _LOGGER.debug("WalkingPad status update : %s", status)
+            if BeltState.ACTIVE in (status["belt_state"], self.data.get("belt_state")):
+                self._last_active_at = time.monotonic()
             self.async_set_updated_data(status)
+            # Every status update postpones the poll, so a treadmill that
+            # pushes once per second never gets polled; check here as well.
+            if self._is_idle() and not self._idle_check_running:
+                self.hass.async_create_task(
+                    self._async_check_idle(), name="walkingpad-idle-check"
+                )
         self._async_push_firmware_once()
 
     @callback
