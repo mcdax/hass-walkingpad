@@ -8,6 +8,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Option **Disconnect when idle**: releases the connection after the belt has
+  stood still for the configured minutes, so the KS-Z1D no longer beeps every
+  10 minutes. Off by default.
+
 ## [1.0.0] - 2026-11-22
 
 First stable release. Requires `walkingpad-controller` 1.0.0.

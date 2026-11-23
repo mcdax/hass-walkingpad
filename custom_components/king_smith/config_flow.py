@@ -14,13 +14,16 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
 from .const import (
+    CONF_IDLE_DISCONNECT_MINUTES,
     CONF_MAC,
     CONF_NAME,
     CONF_PREFERRED_MODE,
     CONF_REMOTE_CONTROL,
     CONF_REMOTE_CONTROL_ENABLED,
+    DEFAULT_IDLE_DISCONNECT_MINUTES,
     DEFAULT_PREFERRED_MODE,
     DOMAIN,
+    MAX_IDLE_DISCONNECT_MINUTES,
     PREFERRED_MODE_OPTIONS,
 )
 
@@ -61,6 +64,9 @@ def _options_from_input(user_input: dict[str, Any]) -> dict[str, Any]:
         ),
         CONF_PREFERRED_MODE: remote_control_data.get(
             CONF_PREFERRED_MODE, DEFAULT_PREFERRED_MODE
+        ),
+        CONF_IDLE_DISCONNECT_MINUTES: user_input.get(
+            CONF_IDLE_DISCONNECT_MINUTES, DEFAULT_IDLE_DISCONNECT_MINUTES
         ),
     }
 
@@ -191,6 +197,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Required(
+                        CONF_IDLE_DISCONNECT_MINUTES,
+                        default=self.config_entry.options.get(
+                            CONF_IDLE_DISCONNECT_MINUTES,
+                            DEFAULT_IDLE_DISCONNECT_MINUTES,
+                        ),
+                    ): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=MAX_IDLE_DISCONNECT_MINUTES)
+                    ),
                     vol.Required(CONF_REMOTE_CONTROL): section(
                         vol.Schema(
                             {

@@ -28,7 +28,14 @@ def _hass_and_entry(options, stored_options):
     entry = types.SimpleNamespace(entry_id="e1", options=options, data={"mac": "AA"})
     hass = types.SimpleNamespace(
         config_entries=entries,
-        data={const.DOMAIN: {"e1": {"options": dict(stored_options)}}},
+        data={const.DOMAIN: {
+            "e1": {
+                "options": dict(stored_options),
+                "coordinator": types.SimpleNamespace(
+                    set_idle_disconnect_minutes=lambda minutes: None
+                ),
+            }
+        }},
     )
     return hass, entry, entries
 

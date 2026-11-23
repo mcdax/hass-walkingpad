@@ -3,6 +3,7 @@
 import asyncio
 import itertools
 import logging
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -12,7 +13,13 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN, BeltState, WalkingPadMode, WalkingPadStatus
+from .const import (
+    DEFAULT_IDLE_DISCONNECT_MINUTES,
+    DOMAIN,
+    BeltState,
+    WalkingPadMode,
+    WalkingPadStatus,
+)
 from .walkingpad import WalkingPad
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,6 +81,11 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         self._shutting_down = False
         self.walkingpad_device.register_status_callback(self._async_handle_update)
         self.walkingpad_device.register_disconnect_callback(self._async_handle_disconnect)
+        # Idle disconnect (see _async_check_idle): the configured minutes, when
+        # the belt was last seen moving, and whether the link was released.
+        self._idle_disconnect_minutes: int = DEFAULT_IDLE_DISCONNECT_MINUTES
+        self._last_active_at: float = time.monotonic()
+        self._idle_released: bool = False
         # Single reconnect task — coordinated by _async_handle_disconnect so we
         # don't spawn parallel reconnect attempts that race each other.
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -107,13 +119,63 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         # it. This periodic poll notices we're down and (idempotently) ensures
         # the reconnect loop is running.
         if not self.walkingpad_device.connected:
+            if not self._idle_released:
+                self._last_active_at = time.monotonic()
             self._ensure_reconnect_running()
+        elif await self._async_check_idle():
+            return self.data
 
         async with asyncio.timeout(STATUS_UPDATE_TIMEOUT_SECONDS):
             await self.walkingpad_device.update_state()
             # We don't know the status yet, it will be transmitted to the _async_handle_update callback.
             # In the meantime, we return the current data to avoid any update (thanks to always_update=False).
             return self.data
+
+    @callback
+    def set_idle_disconnect_minutes(self, minutes: int) -> None:
+        """Apply the idle-disconnect option (0 = off)."""
+        self._idle_disconnect_minutes = minutes
+        if not minutes and self._idle_released:
+            self._idle_released = False
+            self._ensure_reconnect_running()
+
+    def _is_idle(self) -> bool:
+        """True once neither the belt nor a command was active for long enough."""
+        if (
+            not self._idle_disconnect_minutes
+            or not self.walkingpad_device.stay_connected
+        ):
+            return False
+        if self.data.get("belt_state") in (BeltState.ACTIVE, BeltState.STARTING):
+            return False
+        last = max(self._last_active_at, self.walkingpad_device.last_command_at)
+        return time.monotonic() - last >= self._idle_disconnect_minutes * 60
+
+    async def _async_check_idle(self) -> bool:
+        """Release an idle link; returns True if it was released.
+
+        The KS-Z1D resets itself and beeps every 10 minutes while it stands
+        still with a connection, but not without one. The reconnect loop
+        stays off until a command, the Reconnect button or the
+        Stay-connected switch brings the link back.
+        """
+        # Connected again (e.g. by a command): a later drop reconnects.
+        self._idle_released = False
+        if self.data.get("belt_state") in (BeltState.ACTIVE, BeltState.STARTING):
+            self._last_active_at = time.monotonic()
+        if not self._is_idle():
+            return False
+        # Before disconnecting, so the disconnect callback doesn't reconnect.
+        self._idle_released = True
+        if not await self.walkingpad_device.disconnect_if(self._is_idle):
+            self._idle_released = False
+            return False
+        _LOGGER.info(
+            "Belt idle for %s min, released the connection",
+            self._idle_disconnect_minutes,
+        )
+        self.async_update_listeners()
+        return True
 
     @property
     def shutting_down(self) -> bool:
@@ -199,6 +261,13 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         """Spawn the reconnect loop if not already in flight."""
         if self._shutting_down or not self.walkingpad_device.stay_connected:
             return
+        if self._idle_released:
+            # A command since the release (its last_command_at is newer than
+            # the belt's idle period) wants the link back, even if it dropped
+            # again before the next poll.
+            if self._is_idle():
+                return
+            self._idle_released = False
         if self._reconnect_task is not None and not self._reconnect_task.done():
             return
         self._reconnect_task = self.hass.async_create_task(
@@ -271,6 +340,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         "connect now", the same affordance the KS Fit app exposes.
         """
         await self._cancel_reconnect_task()
+        self._idle_released = False
+        self._last_active_at = time.monotonic()
         await self.walkingpad_device.connect()
         self.async_update_listeners()
         if not self.walkingpad_device.connected:
@@ -284,6 +355,8 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
         When turned OFF: cancel any in-flight reconnect and disconnect.
         """
         self.walkingpad_device.stay_connected = value
+        self._idle_released = False
+        self._last_active_at = time.monotonic()
         if value:
             self._ensure_reconnect_running()
         else:
