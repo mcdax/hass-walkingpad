@@ -108,6 +108,8 @@ Stay Connected stays under your control — the integration does not flip it aut
 
 **Disconnect when idle** (integration options, default 0 = never): releases the connection after the belt has stood still for that many minutes, even with Stay Connected on. The KS-Z1D resets itself and beeps every 10 minutes while it stands still with a Bluetooth connection, but not without one; 5 minutes avoids that. A command, the Reconnect button or switching Stay Connected off and on connects again. While disconnected, Home Assistant does not notice a start from the remote.
 
+**Sound** switch (KS-HD-* treadmills): turns the treadmill's buzzer on or off, as in the KS Fit app; the treadmill remembers it. Changes made in the app are not noticed. After switching, the treadmill sends no data while standing still until the next reconnect.
+
 ### 5. Buttons
 
 - **Reconnect** (always available): forces an immediate BLE reconnect instead of waiting out the automatic retry backoff, which can take up to 30 seconds once the treadmill has been off for a while. It is only enabled while the device is disconnected and lives under Konfiguration / Diagnostics.

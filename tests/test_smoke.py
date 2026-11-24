@@ -23,6 +23,7 @@ class FakeDevice:
     max_speed = 6.0
     speed_increment = 0.1
     stay_connected = True
+    supports_sound = True
 
     def __init__(self, protocol):
         self.protocol = protocol
@@ -335,3 +336,25 @@ def test_no_idle_timer_after_close():
 
     asyncio.run(run())
     assert pad._disconnect_timer_task is None
+
+
+def test_failed_sound_change_keeps_the_state():
+    from homeassistant.exceptions import HomeAssistantError
+
+    coordinator = FakeCoordinator(const.ProtocolType.FTMS)
+    entity = switch.WalkingPadSoundSwitch(coordinator)
+    written = []
+    entity.async_write_ha_state = lambda: written.append(entity.is_on)
+
+    async def ok(on):
+        pass
+
+    async def fails(on):
+        raise HomeAssistantError("no")
+
+    coordinator.walkingpad_device.set_sound = ok
+    asyncio.run(entity.async_turn_off())
+    coordinator.walkingpad_device.set_sound = fails
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity.async_turn_on())
+    assert written == [False] and entity.is_on is False

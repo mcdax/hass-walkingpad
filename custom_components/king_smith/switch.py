@@ -9,6 +9,7 @@ from homeassistant.components.switch import (
     SwitchEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_OFF, STATE_ON, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -25,6 +26,7 @@ from .const import (
 )
 from .coordinator import STATUS_UPDATE_INTERVAL, WalkingPadCoordinator
 from .entity import (
+    WalkingPadPushEntity,
     async_remove_stale_entities,
     walkingpad_device_info,
     walkingpad_unique_id,
@@ -35,6 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 
 BELT_SWITCH_KEY = "walkingpad_belt_switch"
 STAY_CONNECTED_KEY = "walkingpad_stay_connected"
+SOUND_KEY = "walkingpad_sound"
 
 # Both belt switch variants (manual / auto) use the unified "Belt"
 # translation_key. The mode is internal config — surfacing it in the entity
@@ -60,6 +63,10 @@ async def async_setup_entry(
 
     # Stay Connected switch is always created (not gated by remote_control)
     entities.append(WalkingPadStayConnectedSwitch(coordinator))
+
+    # Sound is a device setting, not belt control: not gated either.
+    if coordinator.walkingpad_device.supports_sound:
+        entities.append(WalkingPadSoundSwitch(coordinator))
 
     # Belt control switches are gated by remote_control_enabled
     if entry.options.get(CONF_REMOTE_CONTROL_ENABLED, False):
@@ -323,3 +330,46 @@ class WalkingPadStayConnectedSwitch(SwitchEntity, RestoreEntity):
         """Turn off — disconnect BLE to free link for phone app."""
         await self.coordinator.async_set_stay_connected(False)
         self.async_write_ha_state()
+
+
+class WalkingPadSoundSwitch(WalkingPadPushEntity, SwitchEntity, RestoreEntity):
+    """Switch for the treadmill's buzzer.
+
+    The treadmill remembers the setting. It is only read back when switching
+    (reading it stops the treadmill's idle data), so a change made in the
+    KS Fit app isn't noticed: the state is the one last set from here.
+    """
+
+    _attr_assumed_state = True
+
+    entity_description = SwitchEntityDescription(
+        key=SOUND_KEY,
+        icon="mdi:volume-high",
+        translation_key=SOUND_KEY,
+        entity_category=EntityCategory.CONFIG,
+    )
+
+    def __init__(self, coordinator: WalkingPadCoordinator) -> None:
+        """Initialize the sound switch."""
+        super().__init__(coordinator, SOUND_KEY)
+        self._attr_is_on: bool | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last state set from here."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in (STATE_ON, STATE_OFF):
+            self._attr_is_on = last_state.state == STATE_ON
+
+    async def _async_set_sound(self, on: bool) -> None:
+        await self.coordinator.walkingpad_device.set_sound(on)
+        self._attr_is_on = on
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the buzzer on."""
+        await self._async_set_sound(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the buzzer off."""
+        await self._async_set_sound(False)

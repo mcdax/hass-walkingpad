@@ -194,6 +194,9 @@
             },
             "walkingpad_stay_connected": {
                 "name": "Verbunden bleiben"
+            },
+            "walkingpad_sound": {
+                "name": "Summer"
             }
         },
         "number": {
