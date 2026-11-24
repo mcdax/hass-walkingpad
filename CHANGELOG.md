@@ -14,8 +14,8 @@ Requires `walkingpad-controller` 1.1.1.
 
 ### Fixed
 
-- **Stop and pause no longer wait for a sound change** (or another command)
-  in progress, and drop a start or speed change that was not sent yet.
+- **Stop and pause no longer wait for a sound change in progress**, and they
+  drop a start or speed change that was not sent yet.
 - A session stopped from pause is shown as stopped, with its counters reset,
   also after the sound was switched.
 - The Sound switch recovers if the treadmill locks the channel again, and

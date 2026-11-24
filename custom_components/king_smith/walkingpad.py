@@ -24,7 +24,6 @@ import walkingpad_controller.controller as _wpc_controller
 from walkingpad_controller import (
     BeltState,
     OperatingMode,
-    ProtocolType,
     TreadmillStatus,
     WalkingPadController,
 )
@@ -115,6 +114,10 @@ class WalkingPad:
         # Bumped by every stop/pause: a start or speed change requested before
         # it, but not sent yet, is dropped.
         self._halt_generation = 0
+        # A sound change is running (it holds the BLE lock), and the number
+        # of stop/pause commands overtaking it.
+        self._sound_active = False
+        self._halts_active = 0
         # Set by close() on unload: no new connects or commands.
         self._closed = False
 
@@ -300,9 +303,9 @@ class WalkingPad:
         # Re-check under the BLE lock so we don't race with a command
         # that started during the sleep.
         async with self._ble_lock:
-            if generation != self._idle_generation:
+            if generation != self._idle_generation or self._halts_active:
                 # A command ran (or a connect started) after this timer was
-                # armed; its own, newer timer decides.
+                # armed, or a stop/pause is running; its newer timer decides.
                 return
             # From here on this is a BLE operation, not a pending timer: a
             # connect() arriving now must not cancel it midway.
@@ -331,7 +334,7 @@ class WalkingPad:
         the caller decided to disconnect is taken into account.
         """
         async with self._ble_lock:
-            if not self.connected or not still_idle():
+            if not self.connected or self._halts_active or not still_idle():
                 return False
             await self.disconnect()
             return True
@@ -434,35 +437,35 @@ class WalkingPad:
             )
 
     async def _run_halt(self, command: Callable[[], Awaitable[object]]) -> None:
-        """Run a stop/pause without waiting for other commands.
+        """Run a stop/pause; it doesn't wait for a sound change.
 
-        On FTMS the library lets a halt overtake whatever it is doing (a
-        pending start, a sound change), so don't queue it behind them here.
-        If the link is down or drops meanwhile, take the normal path, which
-        connects first.
+        Behind anything else (e.g. a start waiting for the belt to move) it
+        queues as usual: some firmware rejects a halt during the start
+        countdown and starts the belt anyway. If the link drops meanwhile,
+        the normal path reconnects first.
         """
         self._halt_generation += 1
-        if (
-            self.connected
-            and not self._closed
-            and self._controller.protocol is ProtocolType.FTMS
-        ):
-            self._cancel_idle_disconnect()
+        if not (self._sound_active and self.connected and not self._closed):
+            await self._run_command(command, required=True)
+            return
+        self._halts_active += 1
+        try:
             self._last_command_at = time.monotonic()
             result: object = False
             try:
                 result = await command()
             except BleakError as err:
                 _LOGGER.debug("Bluetooth error during stop/pause: %s", err)
-            if result is not False:
-                self._last_command_at = time.monotonic()
-                await self.disconnect_after_command()
-                return
-            if self.connected and self._controller.connected:
-                # Still connected: the device refused or didn't confirm.
-                await self.disconnect_after_command()
+            self._last_command_at = time.monotonic()
+            if result is False and self.connected and self._controller.connected:
                 raise HomeAssistantError("WalkingPad did not confirm the command")
-        await self._run_command(command, required=True)
+            if result is False and not self._controller.connected:
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+        finally:
+            self._halts_active -= 1
+            await self.disconnect_after_command()
+        if result is False:
+            await self._run_command(command, required=True)
 
     async def _run_command_unlocked(
         self,
@@ -575,7 +578,15 @@ class WalkingPad:
 
     async def set_sound(self, on: bool) -> None:
         """Turn the treadmill's buzzer on or off."""
-        await self._run_command(lambda: self._controller.set_sound(on), required=True)
+
+        async def set_sound() -> bool:
+            self._sound_active = True
+            try:
+                return await self._controller.set_sound(on)
+            finally:
+                self._sound_active = False
+
+        await self._run_command(set_sound, required=True)
 
     async def switch_mode(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode."""

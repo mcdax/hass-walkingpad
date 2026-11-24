@@ -149,6 +149,8 @@ def make_pad(status, fail, trace):
     pad._closed = False
     pad._idle_generation = 0
     pad._halt_generation = 0
+    pad._sound_active = False
+    pad._halts_active = 0
     pad._last_command_at = 0.0
 
     async def connect():

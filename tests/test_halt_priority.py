@@ -38,23 +38,103 @@ def test_halt_overtakes_a_hanging_sound_change(halt):
     asyncio.run(run())
 
 
+async def hanging_sound(pad, trace):
+    """Start a sound change that holds the BLE lock until released."""
+    release = asyncio.Event()
+
+    async def set_sound(on):
+        trace.append("sound")
+        await release.wait()
+        return True
+
+    pad._controller.set_sound = set_sound
+    task = asyncio.create_task(pad.set_sound(True))
+    await asyncio.sleep(0.01)
+    return release, task
+
+
 @pytest.mark.parametrize("queued", ["start_belt", "set_speed"])
 def test_halt_drops_a_start_queued_before_it(queued):
     trace: list[str] = []
     pad = make_pad(CONNECTED, False, trace)
 
     async def run():
-        await pad._ble_lock.acquire()
+        release, sound = await hanging_sound(pad, trace)
         args = (3.0,) if queued == "set_speed" else ()
         task = asyncio.create_task(getattr(pad, queued)(*args))
         await asyncio.sleep(0)
         await pad.stop_belt()
-        pad._ble_lock.release()
+        release.set()
+        await sound
         await task
         await pad.start_belt()  # requested after the stop: runs
 
     asyncio.run(run())
-    assert [t for t in trace if t != "disconnect_after_command"] == ["stop", "start"]
+    assert [t for t in trace if t != "disconnect_after_command"] == [
+        "sound",
+        "stop",
+        "start",
+    ]
+
+
+def test_halt_queues_behind_a_running_start():
+    trace: list[str] = []
+    pad = make_pad(CONNECTED, False, trace)
+
+    async def run():
+        moving = asyncio.Event()
+
+        async def start():
+            trace.append("start")
+            await moving.wait()
+            trace.append("moving")
+            return True
+
+        pad._controller.start = start
+        start_task = asyncio.create_task(pad.start_belt())
+        await asyncio.sleep(0.01)
+        pause = asyncio.create_task(pad.pause_belt())
+        await asyncio.sleep(0.01)
+        moving.set()
+        await asyncio.gather(start_task, pause)
+
+    asyncio.run(run())
+    assert [t for t in trace if t != "disconnect_after_command"] == [
+        "start",
+        "moving",
+        "pause",
+    ]
+
+
+def test_no_idle_disconnect_while_a_halt_runs(monkeypatch):
+    monkeypatch.setattr(walkingpad, "IDLE_DISCONNECT_TIMEOUT_SECONDS", 0.01)
+    trace: list[str] = []
+    pad = make_pad(CONNECTED, False, trace)
+    del pad.disconnect_after_command  # the real one
+    pad._stay_connected = False
+
+    async def disconnect():
+        trace.append("disconnect")
+
+    pad.disconnect = disconnect
+
+    async def run():
+        release, sound = await hanging_sound(pad, trace)
+
+        async def stop():
+            release.set()  # the sound change ends and arms the idle timer
+            await asyncio.sleep(0.05)
+            trace.append("stop")
+            return True
+
+        pad._controller.stop = stop
+        await pad.stop_belt()
+        await sound
+        assert trace == ["sound", "stop"]
+        await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    assert trace == ["sound", "stop", "disconnect"]
 
 
 def test_halt_during_the_mode_switch_prevents_the_start(monkeypatch):
@@ -76,44 +156,46 @@ def test_halt_on_a_dropped_link_reconnects():
     trace: list[str] = []
     pad = make_pad(CONNECTED, False, trace)
 
-    async def stop():
-        trace.append("stop")
-        if trace.count("stop") == 1:
-            pad._connection_status = NOT_CONNECTED
-            return False
-        return True
+    async def run():
+        release, sound = await hanging_sound(pad, trace)
 
-    pad._controller.stop = stop
-    asyncio.run(pad.stop_belt())
-    assert trace == ["stop", "connect", "stop", "disconnect_after_command"]
+        async def stop():
+            trace.append("stop")
+            if trace.count("stop") == 1:
+                pad._controller.connected = False  # no disconnect callback yet
+                release.set()
+                return False
+            return True
+
+        pad._controller.stop = stop
+        await pad.stop_belt()
+        await sound
+
+    asyncio.run(run())
+    assert [t for t in trace if t != "disconnect_after_command"] == [
+        "sound",
+        "stop",
+        "connect",
+        "stop",
+    ]
 
 
 def test_refused_halt_is_reported_without_a_second_try():
     trace: list[str] = []
     pad = make_pad(CONNECTED, False, trace)
 
-    async def stop():
-        trace.append("stop")
-        return False
-
-    pad._controller.stop = stop
-    with pytest.raises(HomeAssistantError):
-        asyncio.run(pad.stop_belt())
-    assert trace.count("stop") == 1
-
-
-def test_other_protocols_keep_the_command_order():
-    trace: list[str] = []
-    pad = make_pad(CONNECTED, False, trace)
-    pad._controller.protocol = const.ProtocolType.WILINK
-
     async def run():
-        await pad._ble_lock.acquire()
-        task = asyncio.create_task(pad.stop_belt())
-        await asyncio.sleep(0.01)
-        assert "stop" not in trace
-        pad._ble_lock.release()
-        await task
+        release, sound = await hanging_sound(pad, trace)
+
+        async def stop():
+            trace.append("stop")
+            return False
+
+        pad._controller.stop = stop
+        with pytest.raises(HomeAssistantError):
+            await pad.stop_belt()
+        release.set()
+        await sound
 
     asyncio.run(run())
-    assert "stop" in trace
+    assert trace.count("stop") == 1
