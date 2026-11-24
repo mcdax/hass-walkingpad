@@ -151,3 +151,10 @@ def test_status_during_the_release_does_not_rearm_reconnects():
     assert asyncio.run(coord._async_check_idle())
     coord._async_handle_disconnect()
     assert spawned == [] and coord._idle_released
+
+
+def test_longer_idle_time_reconnects_a_released_link():
+    coord, _, spawned = make_coordinator()
+    asyncio.run(coord._async_check_idle())
+    coord.set_idle_disconnect_minutes(30)
+    assert spawned == ["walkingpad-reconnect"]

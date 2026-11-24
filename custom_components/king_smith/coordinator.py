@@ -136,7 +136,7 @@ class WalkingPadCoordinator(DataUpdateCoordinator[WalkingPadStatus]):
     def set_idle_disconnect_minutes(self, minutes: int) -> None:
         """Apply the idle-disconnect option (0 = off)."""
         self._idle_disconnect_minutes = minutes
-        if not minutes and self._idle_released:
+        if self._idle_released and not self._is_idle():
             self._idle_released = False
             self._ensure_reconnect_running()
 
