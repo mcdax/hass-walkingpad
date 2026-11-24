@@ -8,6 +8,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-24
+
+Requires `walkingpad-controller` 1.1.0.
+
+### Added
+
+- **Sound** switch for KS-HD-* treadmills (tested on the KS-Z1D): turns the
+  buzzer on or off, like the setting in the KS Fit app.
+
 ## [1.1.1] - 2026-11-24
 
 ### Fixed

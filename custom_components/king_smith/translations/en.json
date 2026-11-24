@@ -194,6 +194,9 @@
             },
             "walkingpad_stay_connected": {
                 "name": "Stay connected"
+            },
+            "walkingpad_sound": {
+                "name": "Sound"
             }
         },
         "number": {

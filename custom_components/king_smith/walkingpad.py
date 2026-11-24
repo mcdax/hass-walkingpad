@@ -217,6 +217,11 @@ class WalkingPad:
         return self._controller.protocol
 
     @property
+    def supports_sound(self) -> bool:
+        """Whether the buzzer can be switched."""
+        return self._controller.supports_sound
+
+    @property
     def connection_status(self) -> WalkingPadConnectionStatus:
         """Connection status."""
         return self._connection_status
@@ -510,6 +515,10 @@ class WalkingPad:
         it caches the target and applies it on the next start.
         """
         await self._run_command(lambda: self._controller.set_incline(level))
+
+    async def set_sound(self, on: bool) -> None:
+        """Turn the treadmill's buzzer on or off."""
+        await self._run_command(lambda: self._controller.set_sound(on), required=True)
 
     async def switch_mode(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode."""
