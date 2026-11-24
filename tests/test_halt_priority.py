@@ -199,3 +199,31 @@ def test_refused_halt_is_reported_without_a_second_try():
 
     asyncio.run(run())
     assert trace.count("stop") == 1
+
+
+def test_halt_drops_a_sound_change_queued_behind_a_start():
+    trace: list[str] = []
+    pad = make_pad(CONNECTED, False, trace)
+
+    async def run():
+        moving = asyncio.Event()
+
+        async def start():
+            await moving.wait()
+            return True
+
+        pad._controller.start = start
+        start_task = asyncio.create_task(pad.start_belt())
+        await asyncio.sleep(0.01)
+        sound = asyncio.create_task(pad.set_sound(True))
+        await asyncio.sleep(0.01)
+        pause = asyncio.create_task(pad.pause_belt())
+        await asyncio.sleep(0.01)
+        moving.set()
+        await start_task
+        with pytest.raises(HomeAssistantError):
+            await sound
+        await pause
+
+    asyncio.run(run())
+    assert "pause" in trace and "set_sound" not in trace

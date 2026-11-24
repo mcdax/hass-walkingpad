@@ -506,6 +506,8 @@ class WalkingPad:
         try:
             if halt_generation is not None and halt_generation != self._halt_generation:
                 _LOGGER.info("Stop or pause requested meanwhile; command dropped")
+                if required:
+                    raise HomeAssistantError("Dropped: stop or pause was requested")
                 return
             result = await command()
         except BleakError as err:
@@ -586,7 +588,11 @@ class WalkingPad:
             finally:
                 self._sound_active = False
 
-        await self._run_command(set_sound, required=True)
+        # Dropped if a stop/pause was requested while it was queued, so that
+        # one doesn't have to wait for it.
+        await self._run_command(
+            set_sound, required=True, halt_generation=self._halt_generation
+        )
 
     async def switch_mode(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode."""
