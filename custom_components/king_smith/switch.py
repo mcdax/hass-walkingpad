@@ -11,6 +11,7 @@ from homeassistant.components.switch import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON, EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -65,7 +66,14 @@ async def async_setup_entry(
     entities.append(WalkingPadStayConnectedSwitch(coordinator))
 
     # Sound is a device setting, not belt control: not gated either.
-    if coordinator.walkingpad_device.supports_sound:
+    # After a restart the BLE name may not be known yet; keep the entity then.
+    if coordinator.walkingpad_device.supports_sound or er.async_get(
+        hass
+    ).async_get_entity_id(
+        "switch",
+        DOMAIN,
+        walkingpad_unique_id(coordinator.walkingpad_device, SOUND_KEY),
+    ):
         entities.append(WalkingPadSoundSwitch(coordinator))
 
     # Belt control switches are gated by remote_control_enabled

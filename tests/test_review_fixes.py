@@ -117,3 +117,14 @@ def test_learned_name_is_ignored_by_an_older_library():
     wp = object.__new__(walkingpad.WalkingPad)
     wp._controller = types.SimpleNamespace()
     wp.set_ble_name("KS-HD-Z1D")  # no AttributeError
+
+
+def test_idle_minutes_apply_without_reloading_the_controls():
+    hass, entry, entries = _hass_and_entry(
+        {"remote_control_enabled": True, "idle_disconnect_minutes": 5},
+        {"remote_control_enabled": True},
+    )
+    applied = []
+    hass.data[const.DOMAIN]["e1"]["coordinator"].set_idle_disconnect_minutes = applied.append
+    asyncio.run(king_smith.async_update_options(hass, entry))
+    assert applied == [5] and entries.unloaded == []

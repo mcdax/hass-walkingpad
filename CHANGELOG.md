@@ -8,6 +8,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-24
+
+Requires `walkingpad-controller` 1.1.1.
+
+### Fixed
+
+- **Stop and pause no longer wait for a sound change in progress**, and they
+  drop a start or speed change that was not sent yet.
+- A session stopped from pause is shown as stopped, with its counters reset,
+  also after the sound was switched.
+- The Sound switch recovers if the treadmill locks the channel again, and
+  shows the new state once the treadmill acknowledged it.
+- Changing the idle-disconnect minutes applies at once, without reloading the
+  controls.
+
 ## [1.2.0] - 2026-11-24
 
 Requires `walkingpad-controller` 1.1.0.

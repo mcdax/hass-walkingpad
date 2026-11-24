@@ -122,6 +122,8 @@ class FakeController:
     def __init__(self, trace, fail):
         self.trace = trace
         self.fail = fail
+        self.protocol = const.ProtocolType.FTMS
+        self.connected = True
 
     def __getattr__(self, name):
         async def command(*args):
@@ -146,6 +148,10 @@ def make_pad(status, fail, trace):
     pad._connect_done.set()
     pad._closed = False
     pad._idle_generation = 0
+    pad._halt_generation = 0
+    pad._sound_active = False
+    pad._halts_active = 0
+    pad._last_command_at = 0.0
 
     async def connect():
         trace.append("connect")

@@ -44,6 +44,11 @@ class WalkingPadIntegrationData(TypedDict):
 _LOGGER = logging.getLogger(__name__)
 
 
+def _control_options(options: dict) -> dict:
+    """Return the options that decide which control entities exist."""
+    return {k: v for k, v in options.items() if k != CONF_IDLE_DISCONNECT_MINUTES}
+
+
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload platforms.
 
@@ -62,6 +67,10 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     options = dict(entry.options)
     if options == integration_data["options"]:
         return
+    _apply_idle_disconnect(integration_data["coordinator"], entry)
+    if _control_options(options) == _control_options(integration_data["options"]):
+        integration_data["options"] = options
+        return
     reloadable_platforms = [Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
     if not await hass.config_entries.async_unload_platforms(
         entry, reloadable_platforms
@@ -71,7 +80,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
     # Only now: after a failed unload the next options update retries.
     integration_data["options"] = options
-    _apply_idle_disconnect(integration_data["coordinator"], entry)
 
 
 @callback

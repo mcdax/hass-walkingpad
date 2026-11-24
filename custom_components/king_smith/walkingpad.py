@@ -111,6 +111,13 @@ class WalkingPad:
         self._idle_generation = 0
         # When the last command started or finished (monotonic clock).
         self._last_command_at: float = float("-inf")
+        # Bumped by every stop/pause: a start or speed change requested before
+        # it, but not sent yet, is dropped.
+        self._halt_generation = 0
+        # A sound change is running (it holds the BLE lock), and the number
+        # of stop/pause commands overtaking it.
+        self._sound_active = False
+        self._halts_active = 0
         # Set by close() on unload: no new connects or commands.
         self._closed = False
 
@@ -296,9 +303,9 @@ class WalkingPad:
         # Re-check under the BLE lock so we don't race with a command
         # that started during the sleep.
         async with self._ble_lock:
-            if generation != self._idle_generation:
+            if generation != self._idle_generation or self._halts_active:
                 # A command ran (or a connect started) after this timer was
-                # armed; its own, newer timer decides.
+                # armed, or a stop/pause is running; its newer timer decides.
                 return
             # From here on this is a BLE operation, not a pending timer: a
             # connect() arriving now must not cancel it midway.
@@ -327,7 +334,7 @@ class WalkingPad:
         the caller decided to disconnect is taken into account.
         """
         async with self._ble_lock:
-            if not self.connected or not still_idle():
+            if not self.connected or self._halts_active or not still_idle():
                 return False
             await self.disconnect()
             return True
@@ -417,14 +424,55 @@ class WalkingPad:
                 self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
 
     async def _run_command(
-        self, command: Callable[[], Awaitable[object]], *, required: bool = False
+        self,
+        command: Callable[[], Awaitable[object]],
+        *,
+        required: bool = False,
+        halt_generation: int | None = None,
     ) -> None:
         """Run one library command under the BLE lock; see `_run_command_unlocked`."""
         async with self._ble_lock:
-            await self._run_command_unlocked(command, required=required)
+            await self._run_command_unlocked(
+                command, required=required, halt_generation=halt_generation
+            )
+
+    async def _run_halt(self, command: Callable[[], Awaitable[object]]) -> None:
+        """Run a stop/pause; it doesn't wait for a sound change.
+
+        Behind anything else (e.g. a start waiting for the belt to move) it
+        queues as usual: some firmware rejects a halt during the start
+        countdown and starts the belt anyway. If the link drops meanwhile,
+        the normal path reconnects first.
+        """
+        self._halt_generation += 1
+        if not (self._sound_active and self.connected and not self._closed):
+            await self._run_command(command, required=True)
+            return
+        self._halts_active += 1
+        try:
+            self._last_command_at = time.monotonic()
+            result: object = False
+            try:
+                result = await command()
+            except BleakError as err:
+                _LOGGER.debug("Bluetooth error during stop/pause: %s", err)
+            self._last_command_at = time.monotonic()
+            if result is False and self.connected and self._controller.connected:
+                raise HomeAssistantError("WalkingPad did not confirm the command")
+            if result is False and not self._controller.connected:
+                self._connection_status = WalkingPadConnectionStatus.NOT_CONNECTED
+        finally:
+            self._halts_active -= 1
+            await self.disconnect_after_command()
+        if result is False:
+            await self._run_command(command, required=True)
 
     async def _run_command_unlocked(
-        self, command: Callable[[], Awaitable[object]], *, required: bool = False
+        self,
+        command: Callable[[], Awaitable[object]],
+        *,
+        required: bool = False,
+        halt_generation: int | None = None,
     ) -> None:
         """Connect if needed, run ``command()``, then schedule the idle disconnect.
 
@@ -433,6 +481,9 @@ class WalkingPad:
         error marks the link down. With ``required`` (stop/pause), not
         reaching the device, a BLE error or a command the library reports as
         failed raises HomeAssistantError, so the user sees it.
+
+        With ``halt_generation``, the command is dropped if a stop/pause was
+        requested since that generation.
         """
         if self._closed:
             if required:
@@ -453,6 +504,11 @@ class WalkingPad:
             return
 
         try:
+            if halt_generation is not None and halt_generation != self._halt_generation:
+                _LOGGER.info("Stop or pause requested meanwhile; command dropped")
+                if required:
+                    raise HomeAssistantError("Dropped: stop or pause was requested")
+                return
             result = await command()
         except BleakError as err:
             _LOGGER.warning("Bluetooth error: %s", err)
@@ -468,12 +524,15 @@ class WalkingPad:
 
     async def start_belt(self) -> None:
         """Start the belt."""
+        halt_generation = self._halt_generation
         async with self._ble_lock:
-            await self._start_belt_unlocked()
+            await self._start_belt_unlocked(halt_generation)
 
-    async def _start_belt_unlocked(self) -> None:
+    async def _start_belt_unlocked(self, halt_generation: int) -> None:
         """Start the belt (caller must hold _ble_lock)."""
-        await self._run_command_unlocked(lambda: self._controller.start())
+        await self._run_command_unlocked(
+            lambda: self._controller.start(), halt_generation=halt_generation
+        )
 
     async def stop_belt(self) -> None:
         """Stop the belt — full session end. Resets counters.
@@ -482,7 +541,7 @@ class WalkingPad:
         the phone-app behaviour where the user's stop button preserves
         time/distance/steps across the pause/resume cycle.
         """
-        await self._run_command(lambda: self._controller.stop(), required=True)
+        await self._run_halt(lambda: self._controller.stop())
 
     async def pause_belt(self) -> None:
         """Pause the belt — session stays live, counters preserved.
@@ -492,11 +551,14 @@ class WalkingPad:
         A subsequent ``start_belt()`` resumes the session and continues
         accumulating time/distance/steps from where it left off.
         """
-        await self._run_command(lambda: self._controller.pause(), required=True)
+        await self._run_halt(lambda: self._controller.pause())
 
     async def set_speed(self, speed: float) -> None:
         """Set the belt speed in km/h."""
-        await self._run_command(lambda: self._controller.set_speed(speed))
+        await self._run_command(
+            lambda: self._controller.set_speed(speed),
+            halt_generation=self._halt_generation,
+        )
 
     async def set_vibration(self, level: int) -> None:
         """Set the vibration level (0 = off, 1-4).
@@ -518,19 +580,41 @@ class WalkingPad:
 
     async def set_sound(self, on: bool) -> None:
         """Turn the treadmill's buzzer on or off."""
-        await self._run_command(lambda: self._controller.set_sound(on), required=True)
+
+        async def set_sound() -> bool:
+            self._sound_active = True
+            try:
+                return await self._controller.set_sound(on)
+            finally:
+                self._sound_active = False
+
+        # Dropped if a stop/pause was requested while it was queued, so that
+        # one doesn't have to wait for it.
+        await self._run_command(
+            set_sound, required=True, halt_generation=self._halt_generation
+        )
 
     async def switch_mode(self, mode: WalkingPadMode) -> None:
         """Switch the WalkingPad mode."""
+        if mode is WalkingPadMode.STANDBY:
+            # Standby stops the belt.
+            self._halt_generation += 1
+        halt_generation = self._halt_generation
         async with self._ble_lock:
-            await self._switch_mode_unlocked(mode)
+            await self._switch_mode_unlocked(mode, halt_generation)
 
-    async def _switch_mode_unlocked(self, mode: WalkingPadMode) -> None:
+    async def _switch_mode_unlocked(
+        self, mode: WalkingPadMode, halt_generation: int
+    ) -> None:
         """Switch the WalkingPad mode (caller must hold _ble_lock)."""
         # Map HA WalkingPadMode to library OperatingMode inside the command,
         # so it runs within the command's error handling as before.
         await self._run_command_unlocked(
-            lambda: self._controller.switch_mode(OperatingMode(mode.value))
+            lambda: self._controller.switch_mode(OperatingMode(mode.value)),
+            # Standby itself is a halt and must never be dropped.
+            halt_generation=(
+                None if mode is WalkingPadMode.STANDBY else halt_generation
+            ),
         )
 
     async def start_belt_in_mode(self, mode: WalkingPadMode) -> None:
@@ -539,10 +623,11 @@ class WalkingPad:
         Holds the BLE lock across the entire sequence so coordinator polls
         cannot interleave between switch_mode and start_belt.
         """
+        halt_generation = self._halt_generation
         async with self._ble_lock:
-            await self._switch_mode_unlocked(mode)
+            await self._switch_mode_unlocked(mode, halt_generation)
             await asyncio.sleep(MODE_SWITCH_SETTLE_SECONDS)
-            await self._start_belt_unlocked()
+            await self._start_belt_unlocked(halt_generation)
 
     # --- Speed properties (delegated to library) ---
 
