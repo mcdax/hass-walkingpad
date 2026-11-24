@@ -8,6 +8,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-24
+
+### Fixed
+
+- The first idle disconnect is no longer delayed on a host that has just
+  booted.
+
 ## [1.1.0] - 2026-11-24
 
 ### Added

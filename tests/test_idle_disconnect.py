@@ -14,7 +14,7 @@ from test_smoke import make_pad
 
 def make_coordinator(minutes=5, idle_for=301, belt=const.BeltState.STOPPED):
     pad = make_pad(walkingpad.WalkingPadConnectionStatus.CONNECTED, False, [])
-    pad._last_command_at = 0.0
+    pad._last_command_at = float("-inf")
     coord = object.__new__(coordinator_mod.WalkingPadCoordinator)
     coord.walkingpad_device = pad
     coord.data = {"belt_state": belt}
