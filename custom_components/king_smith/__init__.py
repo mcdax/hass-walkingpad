@@ -12,7 +12,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_BLE_NAME, CONF_MAC, CONF_NAME, DOMAIN
+from .const import (
+    CONF_BLE_NAME,
+    CONF_IDLE_DISCONNECT_MINUTES,
+    CONF_MAC,
+    CONF_NAME,
+    DEFAULT_IDLE_DISCONNECT_MINUTES,
+    DOMAIN,
+)
 from .coordinator import WalkingPadCoordinator
 from .walkingpad import WalkingPad
 
@@ -64,6 +71,17 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_forward_entry_setups(entry, reloadable_platforms)
     # Only now: after a failed unload the next options update retries.
     integration_data["options"] = options
+    _apply_idle_disconnect(integration_data["coordinator"], entry)
+
+
+@callback
+def _apply_idle_disconnect(
+    coordinator: WalkingPadCoordinator, entry: ConfigEntry
+) -> None:
+    """Hand the idle-disconnect option to the coordinator."""
+    coordinator.set_idle_disconnect_minutes(
+        entry.options.get(CONF_IDLE_DISCONNECT_MINUTES, DEFAULT_IDLE_DISCONNECT_MINUTES)
+    )
 
 
 def _advertised_name(hass: HomeAssistant, address: str) -> str | None:
@@ -118,6 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_store_ble_name(hass, entry, _advertised_name(hass, address))
     walkingpad_device = WalkingPad(name, ble_device, entry.data.get(CONF_BLE_NAME))
     coordinator = WalkingPadCoordinator(hass, walkingpad_device, entry.entry_id)
+    _apply_idle_disconnect(coordinator, entry)
 
     integration_data: WalkingPadIntegrationData = {
         "device": walkingpad_device,

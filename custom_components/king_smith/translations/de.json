@@ -63,6 +63,12 @@
                             "preferred_mode": "Bevorzugter Modus"
                         }
                     }
+                },
+                "data": {
+                    "idle_disconnect_minutes": "Verbindung bei Stillstand trennen nach (Minuten, 0 = nie)"
+                },
+                "data_description": {
+                    "idle_disconnect_minutes": "Verhindert beim KS-Z1D das Piepen alle 10 Minuten. Solange getrennt ist, sieht Home Assistant einen Start per Fernbedienung nicht."
                 }
             }
         }

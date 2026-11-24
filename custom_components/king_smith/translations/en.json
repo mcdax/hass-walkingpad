@@ -63,6 +63,12 @@
                             "preferred_mode": "Preferred mode"
                         }
                     }
+                },
+                "data": {
+                    "idle_disconnect_minutes": "Disconnect when idle after (minutes, 0 = never)"
+                },
+                "data_description": {
+                    "idle_disconnect_minutes": "Avoids the KS-Z1D's beep every 10 minutes. While disconnected, Home Assistant does not notice a start from the remote."
                 }
             }
         }

@@ -17,6 +17,11 @@ CONF_NAME: Final = "name"
 # Name the treadmill advertises; the protocol is detected from it.
 CONF_BLE_NAME: Final = "ble_name"
 CONF_PREFERRED_MODE: Final = "preferred_mode"
+# Minutes without belt movement after which the link is released even with
+# Stay connected on; 0 = never.
+CONF_IDLE_DISCONNECT_MINUTES: Final = "idle_disconnect_minutes"
+DEFAULT_IDLE_DISCONNECT_MINUTES: Final = 0
+MAX_IDLE_DISCONNECT_MINUTES: Final = 60
 
 
 @unique

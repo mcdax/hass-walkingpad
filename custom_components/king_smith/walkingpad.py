@@ -12,6 +12,7 @@ recovery, and pending speed management are all handled by the library.
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from enum import Enum, unique
 
@@ -108,6 +109,8 @@ class WalkingPad:
         # Bumped whenever the idle timer is (re)armed or cancelled; a timer
         # that fired but finds a newer generation under the lock is stale.
         self._idle_generation = 0
+        # When the last command started or finished (monotonic clock).
+        self._last_command_at: float = 0.0
         # Set by close() on unload: no new connects or commands.
         self._closed = False
 
@@ -307,6 +310,23 @@ class WalkingPad:
             )
             await self.disconnect()
 
+    @property
+    def last_command_at(self) -> float:
+        """Monotonic time of the last command."""
+        return self._last_command_at
+
+    async def disconnect_if(self, still_idle: Callable[[], bool]) -> bool:
+        """Disconnect under the BLE lock if ``still_idle()`` holds there.
+
+        The check runs under the lock, so a command that was in flight when
+        the caller decided to disconnect is taken into account.
+        """
+        async with self._ble_lock:
+            if not self.connected or not still_idle():
+                return False
+            await self.disconnect()
+            return True
+
     # --- Connection ---
 
     def close(self) -> None:
@@ -413,6 +433,7 @@ class WalkingPad:
             if required:
                 raise HomeAssistantError("WalkingPad integration is unloading")
             return
+        self._last_command_at = time.monotonic()
         if self._connection_status == WalkingPadConnectionStatus.CONNECTING:
             try:
                 async with asyncio.timeout(CONNECT_WAIT_SECONDS):
@@ -435,6 +456,7 @@ class WalkingPad:
                 raise HomeAssistantError(f"WalkingPad Bluetooth error: {err}") from err
             return
         finally:
+            self._last_command_at = time.monotonic()
             await self.disconnect_after_command()
         if required and result is False:
             raise HomeAssistantError("WalkingPad did not confirm the command")
