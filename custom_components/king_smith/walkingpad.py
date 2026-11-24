@@ -110,7 +110,7 @@ class WalkingPad:
         # that fired but finds a newer generation under the lock is stale.
         self._idle_generation = 0
         # When the last command started or finished (monotonic clock).
-        self._last_command_at: float = 0.0
+        self._last_command_at: float = float("-inf")
         # Set by close() on unload: no new connects or commands.
         self._closed = False
 
